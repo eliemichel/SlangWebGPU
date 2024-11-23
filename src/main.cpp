@@ -4,9 +4,27 @@
 
 #include <webgpu/webgpu-raii.hpp>
 
+#include <filesystem>
+#include <variant>
+#include <fstream>
+#include <sstream>
+
 using namespace wgpu;
 
+template <typename Value, typename Error>
+using Result = std::variant<Value, Error>;
+
+struct Kernel {
+	std::string name;
+	ShaderModule shaderModule;
+};
+
+struct KernelError {
+	std::string message;
+};
+
 Device createDevice();
+Result<Kernel, KernelError> createKernel(Device device, const std::string& name, const std::filesystem::path& path);
 
 int main(int, char**) {
 	raii::Device device = createDevice();
@@ -54,4 +72,34 @@ Device createDevice() {
 	device.getAdapterInfo(&info);
 	std::cout << "Using device: " << StringView(info.device) << " (vendor: " << StringView(info.vendor) << ", architecture: " << StringView(info.architecture) << ")" << std::endl;
 	return device;
+}
+
+Result<Kernel, KernelError> createKernel(Device device, const std::string& name, const std::filesystem::path& path) {
+	Kernel kernel;
+	kernel.name = name;
+
+	// 1. Load WGSL source code
+	std::ifstream file;
+	file.open(path);
+	if (!file.is_open()) {
+		return KernelError{ "Could not open file '" + path.string() + "'" };
+	}
+	std::stringstream ss;
+	ss << file.rdbuf();
+	std::string wgslSource = ss.str();
+
+	// 2. Create shader module
+	ShaderSourceWGSL wgslDesc = Default;
+	wgslDesc.code = StringView(wgslSource);
+	ShaderModuleDescriptor descriptor = Default;
+	descriptor.nextInChain = &wgslDesc.chain;
+	descriptor.label = StringView(kernel.name);
+	kernel.shaderModule = device.createShaderModule(descriptor);
+	if (!kernel.shaderModule) {
+		return KernelError{ "Could not compile shader from '" + path.string() + "'" };
+	}
+
+	// 3. Create compute pipeline (TODO)
+
+	return kernel;
 }
