@@ -43,6 +43,7 @@ function(add_slang_shader TargetName)
 	set(oneValueArgs SOURCE ENTRY)
 	set(multiValueArgs)
 	cmake_parse_arguments(arg "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+	# TODO: Handle multiple entry points (generate one compute pipeline for each)
 
 	# The input slang file
 	set(SLANG_SHADER "${CMAKE_CURRENT_SOURCE_DIR}/${arg_SOURCE}")
