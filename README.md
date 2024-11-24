@@ -37,7 +37,8 @@ struct Kernel {
 };
 ```
 
-TODO: Add an example that stops here, without using the generator
+> [!NOTE]
+> If you are interested in an example that only calls `slangc` to compile Slang shaders into WGSL but **does no code generation**, you may have a look at [the `no_codegen` example](examples/no_codegen).
 
 5. As we notice that a large part of the code to create a kernel (layout and bind groups) is redundant with binding information provided by the shader, we use **Slang reflection API** to generate some code. We thus create `src/generator`, using [Slang Playground](https://shader-slang.com/slang-playground/) to explore the reflection API. For this, we add [`CLI11`](https://github.com/CLIUtils/CLI11) the `third_party` directory.
 

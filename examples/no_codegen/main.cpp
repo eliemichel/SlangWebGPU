@@ -3,40 +3,74 @@
 #define WEBGPU_CPP_IMPLEMENTATION
 
 #include <slang-webgpu/common/result.h>
+#include <slang-webgpu/common/logger.h>
+#include <slang-webgpu/common/io.h>
 
+// NB: raii::Foo is the equivalent of Foo except its release()/addRef() methods
+// are automatically called
 #include <webgpu/webgpu-raii.hpp>
 
 #include <filesystem>
-#include <fstream>
-#include <sstream>
 
 using namespace wgpu;
 
+/**
+ * A basic class that contains everything needed to dispatch a compute job.
+ */
 struct Kernel {
 	std::string name;
 	std::vector<raii::BindGroupLayout> bindGroupLayouts;
 	raii::ComputePipeline pipeline;
 };
 
-struct KernelError {
-	std::string message;
-};
+/**
+ * Main entry point
+ */
+Result<Void, Error> run();
 
+/**
+ * Create a WebGPU device.
+ */
 Device createDevice();
-Result<Kernel, KernelError> createKernel(Device device, const std::string& name, const std::filesystem::path& path);
+
+/**
+ * Load kernel from a WGSL file
+ */
+Result<Kernel, Error> createKernel(
+	Device device,
+	const std::string& name,
+	const std::filesystem::path& path
+);
+
+/**
+ * Create a bind group that fits the kernel's layout
+ * The signature of this function matches the kernel's inputs.
+ */
+BindGroup createKernelBindGroup(
+	Device device,
+	const Kernel& kernel,
+	Buffer buffer0,
+	Buffer buffer1,
+	Buffer result
+);
 
 int main(int, char**) {
+	auto maybeError = run();
+	if (isError(maybeError)) {
+		LOG(ERROR) << std::get<Error>(maybeError).message;
+		return 1;
+	}
+	return 0;
+}
+
+Result<Void, Error> run() {
 	// 1. Create GPU device
 	raii::Device device = createDevice();
 	raii::Queue queue = device->getQueue();
 
 	// 2. Load kernel
-	auto maybeKernel = createKernel(*device, "Add buffers", SHADER_DIR "add-buffers.wgsl");
-	if (isError(maybeKernel)) {
-		std::cerr << std::get<KernelError>(maybeKernel).message << std::endl;
-		return 1;
-	}
-	Kernel kernel = std::move(std::get<Kernel>(maybeKernel));
+	Kernel kernel;
+	TRY_ASSIGN(kernel, createKernel(*device, "Add buffers", SHADER_DIR "add-buffers.wgsl"));
 
 	// 3. Create buffers
 	BufferDescriptor bufferDesc = Default;
@@ -68,25 +102,7 @@ int main(int, char**) {
 	queue->writeBuffer(*buffer1, 0, data1.data(), bufferDesc.size);
 
 	// 5. Build bind group
-	std::vector<BindGroupEntry> entries(3, Default);
-	entries[0].binding = 0;
-	entries[0].buffer = *buffer0;
-	entries[0].size = buffer0->getSize();
-
-	entries[1].binding = 1;
-	entries[1].buffer = *buffer1;
-	entries[1].size = buffer1->getSize();
-
-	entries[2].binding = 2;
-	entries[2].buffer = *result;
-	entries[2].size = result->getSize();
-
-	BindGroupDescriptor bindGroupDesc = Default;
-	bindGroupDesc.label = StringView("Bind group");
-	bindGroupDesc.layout = *kernel.bindGroupLayouts[0];
-	bindGroupDesc.entryCount = entries.size();
-	bindGroupDesc.entries = entries.data();
-	raii::BindGroup bindGroup = device->createBindGroup(bindGroupDesc);
+	raii::BindGroup bindGroup = createKernelBindGroup(*device, kernel, *buffer0, *buffer1, *result);
 
 	// 6. Dispatch kernel
 	ComputePassDescriptor computePassDesc = Default;
@@ -117,12 +133,12 @@ int main(int, char**) {
 		device->tick();
 	}
 
-	std::cout << "Result data:" << std::endl;
+	LOG(INFO) << "Result data:";
 	for (int i = 0; i < 10; ++i) {
-		std::cout << data0[i] << " + " << data1[i] << " = " << resultData[i] << std::endl;
+		LOG(INFO) << data0[i] << " + " << data1[i] << " = " << resultData[i];
 	}
 
-	return 0;
+	return {};
 }
 
 Device createDevice() {
@@ -139,10 +155,10 @@ Device createDevice() {
 		[[maybe_unused]] void* userdata1,
 		[[maybe_unused]] void* userdata2
 	) {
-		std::cerr << "[WebGPU] Uncaptured error: ";
-		if (message.data) std::cerr << StringView(message) << " (type: " << type << ")";
-		else std::cerr << "(type: " << type << ")";
-		std::cerr << std::endl;
+		if (message.data)
+			LOG(ERROR) << "[WebGPU] Uncaptured error: " << StringView(message) << " (type: " << type << ")";
+		else
+			LOG(ERROR) << "[WebGPU] Uncaptured error: (reason: " << type << ")";
 	};
 	descriptor.deviceLostCallbackInfo2.callback = [](
 		[[maybe_unused]] WGPUDevice const* device,
@@ -152,32 +168,33 @@ Device createDevice() {
 		[[maybe_unused]] void* userdata2
 	) {
 		if (reason == DeviceLostReason::InstanceDropped) return;
-		std::cerr << "[WebGPU] Device lost: ";
-		if (message.data) std::cerr << StringView(message) << " (reason: " << reason << ")";
-		else std::cerr << "(reason: " << reason << ")";
-		std::cerr << std::endl;
+		if (message.data)
+			LOG(ERROR) << "[WebGPU] Device lost: " << StringView(message) << " (reason: " << reason << ")";
+		else
+			LOG(ERROR) << "[WebGPU] Device lost: (reason: " << reason << ")";
 	};
 	Device device = adapter->requestDevice(descriptor);
 
 	AdapterInfo info;
 	device.getAdapterInfo(&info);
-	std::cout << "Using device: " << StringView(info.device) << " (vendor: " << StringView(info.vendor) << ", architecture: " << StringView(info.architecture) << ")" << std::endl;
+	LOG(INFO)
+		<< "Using device: " << StringView(info.device)
+		<< " (vendor: " << StringView(info.vendor)
+		<< ", architecture: " << StringView(info.architecture) << ")";
 	return device;
 }
 
-Result<Kernel, KernelError> createKernel(Device device, const std::string& name, const std::filesystem::path& path) {
+Result<Kernel, Error> createKernel(
+	Device device,
+	const std::string& name,
+	const std::filesystem::path& path
+) {
 	Kernel kernel;
 	kernel.name = name;
 
 	// 1. Load WGSL source code
-	std::ifstream file;
-	file.open(path);
-	if (!file.is_open()) {
-		return KernelError{ "Error while creating kernel '" + name + "': could not open file '" + path.string() + "'" };
-	}
-	std::stringstream ss;
-	ss << file.rdbuf();
-	std::string wgslSource = ss.str();
+	std::string wgslSource;
+	TRY_ASSIGN(wgslSource, loadTextFile(path));
 
 	// 2. Create shader module
 	ShaderSourceWGSL wgslDesc = Default;
@@ -187,7 +204,7 @@ Result<Kernel, KernelError> createKernel(Device device, const std::string& name,
 	shaderDesc.label = StringView(kernel.name);
 	raii::ShaderModule shaderModule = device.createShaderModule(shaderDesc);
 	if (!shaderModule) {
-		return KernelError{ "Error while creating kernel '" + name + "': could not compile shader from '" + path.string() + "'" };
+		return Error{ "Error while creating kernel '" + name + "': could not compile shader from '" + path.string() + "'" };
 	}
 
 	// 3. Create pipeline layout
@@ -226,4 +243,33 @@ Result<Kernel, KernelError> createKernel(Device device, const std::string& name,
 	kernel.pipeline = pipeline;
 	kernel.bindGroupLayouts = bindGroupLayouts;
 	return kernel;
+}
+
+BindGroup createKernelBindGroup(
+	Device device,
+	const Kernel& kernel,
+	Buffer buffer0,
+	Buffer buffer1,
+	Buffer result
+) {
+	std::vector<BindGroupEntry> entries(3, Default);
+	entries[0].binding = 0;
+	entries[0].buffer = buffer0;
+	entries[0].size = buffer0.getSize();
+
+	entries[1].binding = 1;
+	entries[1].buffer = buffer1;
+	entries[1].size = buffer1.getSize();
+
+	entries[2].binding = 2;
+	entries[2].buffer = result;
+	entries[2].size = result.getSize();
+
+	BindGroupDescriptor bindGroupDesc = Default;
+	bindGroupDesc.label = StringView("Bind group");
+	bindGroupDesc.layout = *kernel.bindGroupLayouts[0];
+	bindGroupDesc.entryCount = entries.size();
+	bindGroupDesc.entries = entries.data();
+
+	return device.createBindGroup(bindGroupDesc);
 }
