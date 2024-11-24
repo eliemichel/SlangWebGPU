@@ -15,6 +15,8 @@ This is a demo of a possible use of [Slang](https://shader-slang.com/) shader co
 > [!WARNING]
 > The WebGPU API is still a Work in Progress at the time I write these lines. **To make sure this setup works**, use the very `webgpu` directory provided in this repository, which fetches the very version of the API for which it was developed (which is [Dawn](https://dawn.googlesource.com/dawn)-specific, BTW).
 
+> [!NOTE]
+> This example relies on the `webgpu.hpp` and `webgpu-raii.hpp` shallow wrapper of `webgpu.h` provided [WebGPU-distribution](https://github.com/eliemichel/WebGPU-distribution). If this would be a deal-breaker for your use case, you are welcome to **open an issue or a pull request** that addresses this, as there should be no particular blocker to get rid of it.
 
 Manually reproducing this repo
 ------------------------------

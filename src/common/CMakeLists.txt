@@ -13,5 +13,6 @@ target_sources(slang_webgpu_common
 	${INCLUDE_DIR}/io.h
 	${INCLUDE_DIR}/kernel-utils.h
 	${INCLUDE_DIR}/variant-utils.h
+	${INCLUDE_DIR}/slang-result-utils.h
 	src/io.cpp
 )

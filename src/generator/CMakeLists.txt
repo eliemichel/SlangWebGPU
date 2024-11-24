@@ -4,7 +4,6 @@ set_common_target_properties(slang_webgpu_generator)
 
 target_sources(slang_webgpu_generator
 	PRIVATE
-	slang-result-utils.h
 	main.cpp
 )
 

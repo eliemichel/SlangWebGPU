@@ -1,9 +1,8 @@
-#include "slang-result-utils.h" // for TRY_SLANG
-
 #include <slang-webgpu/common/result.h>
 #include <slang-webgpu/common/logger.h>
 #include <slang-webgpu/common/io.h>
 #include <slang-webgpu/common/variant-utils.h>
+#include <slang-webgpu/common/slang-result-utils.h>
 
 #include <slang.h>
 #include <slang-com-ptr.h>
