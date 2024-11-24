@@ -1,7 +1,7 @@
 
 
 add_slang_shader(
-	hello_world2
+	hello_world
 	SOURCE shaders/hello-world.slang
 	ENTRY computeMain
 )
@@ -22,5 +22,5 @@ target_link_libraries(slang_webgpu_example
 )
 
 target_link_slang_shaders(slang_webgpu_example
-	hello_world2
+	hello_world
 )

@@ -31,7 +31,7 @@ int main(int, char**) {
 	raii::Queue queue = device->getQueue();
 
 	// 2. Load kernel
-	auto maybeKernel = createKernel(*device, "Hello World", R"(G:\SourceCode\SlangWebGPU\build\src\shaders\hello-world.wgsl)");
+	auto maybeKernel = createKernel(*device, "Add buffers", SHADER_DIR "add-buffers.wgsl");
 	if (isError(maybeKernel)) {
 		std::cerr << std::get<KernelError>(maybeKernel).message << std::endl;
 		return 1;
@@ -119,7 +119,7 @@ int main(int, char**) {
 
 	std::cout << "Result data:" << std::endl;
 	for (int i = 0; i < 10; ++i) {
-		std::cout << resultData[i] << std::endl;
+		std::cout << data0[i] << " + " << data1[i] << " = " << resultData[i] << std::endl;
 	}
 
 	return 0;
