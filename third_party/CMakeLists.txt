@@ -1,2 +1,2 @@
 add_subdirectory(webgpu)
-add_subdirectory(argparse)
+add_subdirectory(cli11)

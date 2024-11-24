@@ -1,6 +1,10 @@
 #pragma once
 
 #include <variant>
+#include <string>
+
+/////////////////////////////////////////////////
+// GENERIC RESULT TYPE
 
 /**
  * The Result type contains either a correct value or an error.
@@ -10,7 +14,39 @@
 template <typename Value, typename Error>
 using Result = std::variant<Value, Error>;
 
+/**
+ * Test if a Result contains an error rather than a result value
+ */
 template <typename Value, typename Error>
 bool isError(const Result<Value, Error>& result) {
 	return result.index() == 1;
 }
+
+/**
+ * A unit type, used as first argument of Result for function that return void or an error.
+ */
+struct Void {};
+
+/**
+ * A generic error type, to be used when there is no need for a specific type.
+ */
+struct Error {
+	std::string message;
+};
+
+/**
+ * Macro that tries to assign the result of 'expression' to 'variable'.
+ * The expression must evaluate into a Result<Value,Error> type, such that
+ * Value is the type of 'variable'. In case of error, the Error object is
+ * returned, which implies that this macro may only be called from within
+ * a function whose return type is Result<_,Error>.
+ */
+#define TRY_ASSIGN(variable, expression) \
+	{ \
+		auto result = (expression); \
+		if (isError(result)) { \
+			return std::get<1>(result); \
+		} else { \
+			variable = std::move(std::get<0>(result)); \
+		} \
+	}

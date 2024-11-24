@@ -28,8 +28,11 @@ include(FetchContent)
 # Information
 
 # This fetches a precompiled release of Slang, and makes it available through:
-#  - Target 'slang_static' is the static version of slang library.
+#  - Target 'slang' links to slang dynamic library.
 #  - Variable 'SLANGC' points to the slangc executable.
+#  - Function 'target_copy_slang_binaries' should be called for all executable
+#    target the indirectly links slang so that the dll/dylib/so file of slang
+#    is copied next to the generated binary.
 
 #############################################
 # Options
@@ -86,16 +89,17 @@ set(Slang_ROOT "${${FC_NAME}_SOURCE_DIR}")
 #############################################
 # Import targets (ideally slang would provide a SlangConfig.cmake)
 
-add_library(slang_static STATIC IMPORTED GLOBAL)
+add_library(slang SHARED IMPORTED GLOBAL)
 
 # TODO: This is Windows only!!!
 set_target_properties(
-	slang_static
+	slang
 	PROPERTIES
-		IMPORTED_LOCATION "${Slang_ROOT}/lib/slang.lib"
+		IMPORTED_IMPLIB "${Slang_ROOT}/lib/slang.lib"
+		IMPORTED_LOCATION "${Slang_ROOT}/bin/slang.dll"
 )
 
-target_include_directories(slang_static INTERFACE
+target_include_directories(slang INTERFACE
 	"${Slang_ROOT}/include"
 )
 
@@ -104,3 +108,25 @@ target_include_directories(slang_static INTERFACE
 
 # TODO: This is Windows only!!!
 SET(SLANGC "${Slang_ROOT}/bin/slangc.exe" CACHE PATH "Path to the slangc executable, set by FetchSlang.cmake")
+
+#############################################
+# Utility function
+
+# Get path to .dll/.so/.dylib, for target_copy_slang_binaries
+get_target_property(SLANG_RUNTIME_LIB slang IMPORTED_LOCATION)
+message(STATUS "Using Slang runtime '${SLANG_RUNTIME_LIB}'")
+set(SLANG_RUNTIME_LIB ${SLANG_RUNTIME_LIB} CACHE INTERNAL "Path to the Slang library binary")
+
+# The application's binary must find the .dll/.so/.dylib at runtime,
+# so we automatically copy it next to the binary.
+function(target_copy_slang_binaries TargetName)
+	add_custom_command(
+		TARGET ${TargetName} POST_BUILD
+		COMMAND
+			${CMAKE_COMMAND} -E copy_if_different
+			${SLANG_RUNTIME_LIB}
+			$<TARGET_FILE_DIR:${TargetName}>
+		COMMENT
+			"Copying '${SLANG_RUNTIME_LIB}' to '$<TARGET_FILE_DIR:${TargetName}>'..."
+	)
+endfunction(target_copy_slang_binaries)
