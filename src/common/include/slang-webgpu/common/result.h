@@ -50,3 +50,17 @@ struct Error {
 			variable = std::move(std::get<0>(result)); \
 		} \
 	}
+
+ /**
+  * Macro that tries to execute a statement that evaluates into
+  * Result<Void,Error>. In case of error, the Error object is returned, which
+  * implies that this macro may only be called from within a function whose
+  * return type is Result<_,Error>.
+  */
+#define TRY(statement) \
+	{ \
+		auto result = (statement); \
+		if (isError(result)) { \
+			return std::get<1>(result); \
+		} \
+	}

@@ -4,4 +4,11 @@
 
 #include <filesystem>
 
-Result<std::string, Error> loadTextFile(const std::filesystem::path& path);
+Result<std::string, Error> loadTextFile(
+	const std::filesystem::path& path
+);
+
+Result<Void, Error> saveTextFile(
+	const std::filesystem::path& path,
+	const std::string& contents
+);

@@ -37,6 +37,8 @@ struct Kernel {
 };
 ```
 
+TODO: Add an example that stops here, without using the generator
+
 5. As we notice that a large part of the code to create a kernel (layout and bind groups) is redundant with binding information provided by the shader, we use **Slang reflection API** to generate some code. We thus create `src/generator`, using [Slang Playground](https://shader-slang.com/slang-playground/) to explore the reflection API. For this, we add [`CLI11`](https://github.com/CLIUtils/CLI11) the `third_party` directory.
 
 6. To write the generator, follow instructions from [Slang Compilation API documentation](https://shader-slang.com/slang/user-guide/compiling#using-the-compilation-api), then [Slang Reflection API documentation](https://shader-slang.com/slang/user-guide/reflection.html).

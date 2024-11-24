@@ -53,3 +53,23 @@ function(set_common_target_properties TargetName)
 	endif()
 
 endfunction(set_common_target_properties)
+
+#############################################
+# Variant of set_common_target_properties that add extra settings for
+# executable targets in the examples directory.
+#
+# Example:
+#   set_example_target_properties(my_target)
+function(set_example_target_properties TargetName)
+
+	set_common_target_properties(${TargetName})
+
+	set_target_properties(${TargetName}
+		PROPERTIES
+		FOLDER "SlangWebGPU/examples"
+	)
+
+	# All examples use WebGPU
+	target_copy_webgpu_binaries(${TargetName})
+
+endfunction(set_example_target_properties)

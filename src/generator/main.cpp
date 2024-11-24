@@ -39,17 +39,22 @@ int main(int argc, char* argv[]) {
 		->required()
 		->check(CLI::ExistingFile);
 	app.add_option("-w,--output-wgsl", args.outputWgsl, "Path to the output WGSL shader source");
-	app.add_option("-d,--output-hpp", args.outputHpp, "Path to the output C++ header file that define kernels for each entry point");
-	app.add_option("-c,--output-cpp", args.outputCpp, "Path to the output C++ source file that implements the header file");
+	auto outputHppOpt = app.add_option("-d,--output-hpp", args.outputHpp, "Path to the output C++ header file that define kernels for each entry point");
+	auto outputCppOpt = app.add_option("-c,--output-cpp", args.outputCpp, "Path to the output C++ source file that implements the header file");
 	app.add_option("-e,--entrypoint", args.entryPoints, "Entry points to generate kernel for")
 		->required()
 		->delimiter(',');
 	app.add_option("-I,--include-directories", args.includeDirectories, "Directories where to look for includes in slang shader")
 		->delimiter(',');
 
+	// These options need each others
+	outputHppOpt->needs(outputCppOpt);
+	outputCppOpt->needs(outputHppOpt);
+
 	CLI11_PARSE(app, argc, argv);
 
 	auto maybeError = run(args);
+
 	if (isError(maybeError)) {
 		LOG(ERROR) << std::get<Error>(maybeError).message;
 		return 1;
@@ -58,7 +63,9 @@ int main(int argc, char* argv[]) {
 	return 0;
 }
 
-Result<Void, Error> run(const Arguments& args) {
+Result<Slang::ComPtr<ISession>, Error> createSlangSession(
+	std::vector<std::string> includeDirectories
+) {
 
 	// This function is highly based on instructions found at
 	// https://shader-slang.com/slang/user-guide/compiling#using-the-compilation-api
@@ -75,71 +82,177 @@ Result<Void, Error> run(const Arguments& args) {
 	sessionDesc.targets = &target;
 	sessionDesc.targetCount = 1;
 
-	std::vector<const char*> includeDirectoriesData(args.includeDirectories.size());
+	std::vector<const char*> includeDirectoriesData(includeDirectories.size());
 	std::transform(
-		args.includeDirectories.cbegin(),
-		args.includeDirectories.cend(),
+		includeDirectories.cbegin(),
+		includeDirectories.cend(),
 		includeDirectoriesData.begin(),
 		[](const std::string& path) { return path.c_str(); }
 	);
 	sessionDesc.searchPaths = includeDirectoriesData.data();
 	sessionDesc.searchPathCount = includeDirectoriesData.size();
 
-	/* ... fill in `sessionDesc` ... */
 	Slang::ComPtr<ISession> session;
 	TRY_SLANG(globalSession->createSession(sessionDesc, session.writeRef()));
 
-	LOG(INFO) << "Loading file '" << args.inputSlang << "'...";
+	return session;
+}
+
+Result<Slang::ComPtr<IComponentType>, Error> loadSlangModule(
+	Slang::ComPtr<ISession> session,
+	const std::string& name,
+	const std::filesystem::path& inputSlang,
+	const std::vector<std::string>& entryPoints
+) {
+
+	// This function is highly based on instructions found at
+	// https://shader-slang.com/slang/user-guide/compiling#using-the-compilation-api
+
+	LOG(INFO) << "Loading file '" << inputSlang << "'...";
 	std::string source;
-	TRY_ASSIGN(source, loadTextFile(args.inputSlang));
+	TRY_ASSIGN(source, loadTextFile(inputSlang));
 
 	LOG(INFO) << "Loading Slang module...";
 	Slang::ComPtr<IBlob> diagnostics;
 	IModule* module = session->loadModuleFromSourceString(
-		args.name.c_str(),
-		args.inputSlang.string().c_str(),
+		name.c_str(),
+		inputSlang.string().c_str(),
 		source.c_str(),
 		diagnostics.writeRef()
 	);
 	if (diagnostics) {
 		std::string message = (const char*)diagnostics->getBufferPointer();
-		return Error{ "Could not load slang module from file '" + args.inputSlang.string() + "': " + message};
+		return Error{ "Could not load slang module from file '" + inputSlang.string() + "': " + message };
 	}
 
-	for (const std::string& entryPointName : args.entryPoints) {
-		LOG(INFO) << "Processing entry point '" << entryPointName << "'...";
+	LOG(INFO) << "Composing shader program...";
+	std::vector<IComponentType*> components;
+	components.reserve(1 + entryPoints.size());
+	components.push_back(module);
+	for (const std::string& entryPointName : entryPoints) {
+		LOG(INFO) << "- Adding entry point '" << entryPointName << "'...";
 		Slang::ComPtr<IEntryPoint> entryPoint;
 		TRY_SLANG(module->findEntryPointByName(entryPointName.c_str(), entryPoint.writeRef()));
 
-		IComponentType* components[] = { module, entryPoint };
-		Slang::ComPtr<IComponentType> program;
-		TRY_SLANG(session->createCompositeComponentType(components, 2, program.writeRef()));
+		components.push_back(entryPoint);
+	}
+	Slang::ComPtr<IComponentType> program;
+	TRY_SLANG(session->createCompositeComponentType(components.data(), components.size(), program.writeRef()));
 
-		LOG(INFO) << "Reflection for entry point '" << entryPointName << "'...";
-		slang::ProgramLayout* layout = program->getLayout();
-		LOG(INFO) << "layout: " << layout;
+	return program;
+}
 
-		LOG(INFO) << "Compilation for entry point '" << entryPointName << "'...";
-		Slang::ComPtr<IComponentType> linkedProgram;
-		Slang::ComPtr<ISlangBlob> linkDiagnostics;
-		program->link(linkedProgram.writeRef(), linkDiagnostics.writeRef());
-		if (linkDiagnostics) {
-			std::string message = (const char*)linkDiagnostics->getBufferPointer();
-			return Error{ "Could not link slang module from file '" + args.inputSlang.string() + "' for entry point '" + entryPointName + "': " + message };
+Result<Void, Error> compileToWgsl(
+	Slang::ComPtr<IComponentType> program,
+	const std::filesystem::path& outputWgsl,
+	const std::filesystem::path& inputSlang // only to give context in error messages
+) {
+
+	// This function is highly based on instructions found at
+	// https://shader-slang.com/slang/user-guide/compiling#using-the-compilation-api
+
+	LOG(INFO) << "Linking program...";
+	Slang::ComPtr<IComponentType> linkedProgram;
+	Slang::ComPtr<ISlangBlob> linkDiagnostics;
+	program->link(linkedProgram.writeRef(), linkDiagnostics.writeRef());
+	if (linkDiagnostics) {
+		std::string message = (const char*)linkDiagnostics->getBufferPointer();
+		return Error{ "Could not link slang module from file '" + inputSlang.string() + "': " + message };
+	}
+
+	Slang::ComPtr<IBlob> codeBlob;
+	Slang::ComPtr<ISlangBlob> codeDiagnostics;
+	int targetIndex = 0; // only one target
+	TRY_SLANG(linkedProgram->getTargetCode(
+		targetIndex,
+		codeBlob.writeRef(),
+		codeDiagnostics.writeRef()
+	));
+	if (codeDiagnostics) {
+		std::string message = (const char*)codeDiagnostics->getBufferPointer();
+		return Error{ "Could not generate WGSL source code from file '" + inputSlang.string() + "': " + message };
+	}
+
+	std::string wgslSource = (const char*)codeBlob->getBufferPointer();
+
+	LOG(INFO) << "Writing generated WGSL source into '" << outputWgsl << "'...";
+	saveTextFile(outputWgsl, wgslSource);
+
+	return {};
+}
+
+Result<Void, Error> generateCppBinding(
+	Slang::ComPtr<IComponentType> program,
+	[[maybe_unused]] const std::vector<std::string>& entryPoints,
+	[[maybe_unused]] const std::filesystem::path& outputHpp,
+	[[maybe_unused]] const std::filesystem::path& outputCpp,
+	[[maybe_unused]] const std::filesystem::path& inputSlang // only to give context in error messages
+) {
+	LOG(INFO) << "Getting reflection information...";
+	slang::ProgramLayout* layout = program->getLayout();
+	LOG(INFO) << "layout: " << layout;
+
+	LOG(INFO) << "Global program parameters:";
+	{
+		unsigned parameterCount = layout->getParameterCount();
+		for (unsigned i = 0; i < parameterCount; ++i)
+		{
+			slang::VariableLayoutReflection* parameter = layout->getParameterByIndex(i);
+			LOG(INFO) << "- #" << i << ": " << parameter->getName();
 		}
+	}
 
-		int entryPointIndex = 0; // only one entry point
-		int targetIndex = 0; // only one target
-		Slang::ComPtr<IBlob> kernelBlob;
-		TRY_SLANG(linkedProgram->getEntryPointCode(
-			entryPointIndex,
-			targetIndex,
-			kernelBlob.writeRef(),
-			diagnostics.writeRef()
+	LOG(INFO) << "Program entry points:";
+	SlangUInt entryPointCount = layout->getEntryPointCount();
+	for (SlangUInt i = 0; i < entryPointCount; ++i)
+	{
+		slang::EntryPointReflection* entryPoint = layout->getEntryPointByIndex(i);
+		LOG(INFO) << "- #" << i << ": " << entryPoint->getName();
+		entryPoint->getParameterCount();
+		LOG(INFO) << "  Entry point parameters:";
+		unsigned parameterCount = entryPoint->getParameterCount();
+		for (unsigned j = 0; j < parameterCount; ++j)
+		{
+			slang::VariableLayoutReflection* parameter = entryPoint->getParameterByIndex(j);
+			LOG(INFO) << "  - #" << j << ": " << parameter->getName();
+		}
+	}
+
+	return {};
+}
+
+Result<Void, Error> run(const Arguments& args) {
+
+	Slang::ComPtr<ISession> session;
+	TRY_ASSIGN(session, createSlangSession(args.includeDirectories));
+
+	Slang::ComPtr<IComponentType> program;
+	TRY_ASSIGN(program, loadSlangModule(
+		session,
+		args.name,
+		args.inputSlang,
+		args.entryPoints
+	));
+
+	if (!args.outputWgsl.empty()) {
+		TRY(compileToWgsl(
+			program,
+			args.outputWgsl,
+			args.inputSlang
 		));
+	}
 
-		std::string wgslSource = (const char*)kernelBlob->getBufferPointer();
-		LOG(DEBUG) << "WGSL Source:\n" << wgslSource;
+	if (!args.outputHpp.empty()) {
+		if (args.outputCpp.empty()) {
+			return Error{ "Option --output-cpp must be non-empty when --output-hpp is non-empty."};
+		}
+		TRY(generateCppBinding(
+			program,
+			args.entryPoints,
+			args.outputHpp,
+			args.outputCpp,
+			args.inputSlang
+		));
 	}
 
 	return {};
