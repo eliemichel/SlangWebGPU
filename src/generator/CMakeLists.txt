@@ -13,6 +13,7 @@ target_link_libraries(slang_webgpu_generator
 	slang
 	slang_webgpu_common
 	CLI11
+	magic_enum
 )
 
 target_copy_slang_binaries(slang_webgpu_generator)

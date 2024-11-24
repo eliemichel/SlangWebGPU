@@ -40,6 +40,11 @@ struct Kernel {
 > [!NOTE]
 > If you are interested in an example that only calls `slangc` to compile Slang shaders into WGSL but **does no code generation**, you may have a look at [the `no_codegen` example](examples/no_codegen).
 
-5. As we notice that a large part of the code to create a kernel (layout and bind groups) is redundant with binding information provided by the shader, we use **Slang reflection API** to generate some code. We thus create `src/generator`, using [Slang Playground](https://shader-slang.com/slang-playground/) to explore the reflection API. For this, we add [`CLI11`](https://github.com/CLIUtils/CLI11) the `third_party` directory.
+5. As we notice that a large part of the code to create a kernel (layout and bind groups) is redundant with binding information provided by the shader, we use **Slang reflection API** to generate some code. We thus create `src/generator`, using [Slang Playground](https://shader-slang.com/slang-playground/) to explore the reflection API. For this, we add [`CLI11`](https://github.com/CLIUtils/CLI11) to the `third_party` directory.
 
 6. To write the generator, follow instructions from [Slang Compilation API documentation](https://shader-slang.com/slang/user-guide/compiling#using-the-compilation-api), then [Slang Reflection API documentation](https://shader-slang.com/slang/user-guide/reflection.html).
+
+7. Create a very basic template system so that the generated file can be drafter in `src/generator/binding-template.tpl`. Adding [`magic_enum`](https://github.com/Neargye/magic_enum) to the `third_party` directory to produce nicer error messages.
+
+> [!WARNING]
+> Our binding generator does not handle every single one of the many cases of bindings that Slang supports. To add extra mechanism, go have a look at `BindingGenerator` in `src/generator/main.cpp`.

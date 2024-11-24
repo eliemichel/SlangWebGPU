@@ -2,6 +2,7 @@
 
 #include <variant>
 #include <string>
+#include <sstream>
 
 /////////////////////////////////////////////////
 // GENERIC RESULT TYPE
@@ -51,16 +52,28 @@ struct Error {
 		} \
 	}
 
- /**
-  * Macro that tries to execute a statement that evaluates into
-  * Result<Void,Error>. In case of error, the Error object is returned, which
-  * implies that this macro may only be called from within a function whose
-  * return type is Result<_,Error>.
-  */
+/**
+ * Macro that tries to execute a statement that evaluates into
+ * Result<Void,Error>. In case of error, the Error object is returned, which
+ * implies that this macro may only be called from within a function whose
+ * return type is Result<_,Error>.
+ */
 #define TRY(statement) \
 	{ \
 		auto result = (statement); \
 		if (isError(result)) { \
 			return std::get<1>(result); \
 		} \
+	}
+
+/**
+ * Sort of assertion, except it does not throw but rather return an error,
+ * which requires that this macro may only be called from within a function
+ * whose return type is Result<_,Error>.
+ */
+#define TRY_ASSERT(test, message) \
+	if (!(test)) { \
+		std::ostringstream _out; \
+		_out << "Assertion failed: " << message; \
+		return Error{ _out.str() }; \
 	}
