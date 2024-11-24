@@ -2,22 +2,15 @@
 // file, and before including webgpu C++ header (see https://github.com/eliemichel/WebGPU-Cpp)
 #define WEBGPU_CPP_IMPLEMENTATION
 
+#include <slang-webgpu/common/result.h>
+
 #include <webgpu/webgpu-raii.hpp>
 
 #include <filesystem>
-#include <variant>
 #include <fstream>
 #include <sstream>
 
 using namespace wgpu;
-
-template <typename Value, typename Error>
-using Result = std::variant<Value, Error>;
-
-template <typename Value, typename Error>
-bool isError(const Result<Value, Error>& result) {
-	return result.index() == 1;
-}
 
 struct Kernel {
 	std::string name;

@@ -27,6 +27,8 @@ include(cmake/Utils.cmake)
 
 # Fetch Slang binaries
 include(cmake/FetchSlang.cmake)
+
+# Dependencies bundled within this codebase
 add_subdirectory(third_party)
 
 #############################################
@@ -35,6 +37,7 @@ add_subdirectory(third_party)
 add_subdirectory(src)
 
 if (SLANG_WEBGPU_BUILD_EXAMPLES)
+	add_subdirectory(examples)
 	set_default_target(slang_webgpu_example)
 endif()
 
