@@ -19,6 +19,7 @@ using namespace slang;
 struct Arguments {
 	std::string name;
 	std::filesystem::path inputSlang;
+	std::filesystem::path inputTemplate;
 	std::filesystem::path outputWgsl;
 	std::filesystem::path outputHpp;
 	std::filesystem::path outputCpp;
@@ -38,6 +39,8 @@ int main(int argc, char* argv[]) {
 	app.add_option("-i,--input-slang", args.inputSlang, "Path to the input Slang shader source")
 		->required()
 		->check(CLI::ExistingFile);
+	auto inputTemplateOpt = app.add_option("-t,--input-template", args.inputTemplate, "Path to the template used to generate binding source")
+		->check(CLI::ExistingFile);
 	app.add_option("-w,--output-wgsl", args.outputWgsl, "Path to the output WGSL shader source");
 	auto outputHppOpt = app.add_option("-d,--output-hpp", args.outputHpp, "Path to the output C++ header file that define kernels for each entry point");
 	auto outputCppOpt = app.add_option("-c,--output-cpp", args.outputCpp, "Path to the output C++ source file that implements the header file");
@@ -48,8 +51,9 @@ int main(int argc, char* argv[]) {
 		->delimiter(',');
 
 	// These options need each others
-	outputHppOpt->needs(outputCppOpt);
-	outputCppOpt->needs(outputHppOpt);
+	outputHppOpt->needs(outputCppOpt, inputTemplateOpt);
+	outputCppOpt->needs(outputHppOpt, inputTemplateOpt);
+	inputTemplateOpt->needs(outputHppOpt, outputCppOpt);
 
 	CLI11_PARSE(app, argc, argv);
 
@@ -181,11 +185,86 @@ Result<Void, Error> compileToWgsl(
 	return {};
 }
 
+// This is a very basic templating system
+Result<std::string, Error> generateCppBinding(
+	const std::string& tpl,
+	const std::string& targetSectionName,
+	const std::filesystem::path& inputTemplate // only to give context in error messages
+) {
+	enum class ParserState {
+		Init,
+		InSection,
+		Done,
+	};
+	ParserState state = ParserState::Init;
+
+	// Losely inspired by https://stackoverflow.com/a/2549643/1549389
+	std::ostringstream out;
+	size_t pos = 0;
+	size_t section_end_pos = std::string::npos;
+	while (state != ParserState::Done) {
+		switch (state) {
+		case ParserState::Init: {
+			// Look for the beginning of the section
+			size_t section_name_start_pos = tpl.find("[[", pos);
+			if (section_name_start_pos == std::string::npos) {
+				LOG(WARNING) << "Template does not contain any section named [[" << targetSectionName << "]]";
+				state = ParserState::Done;
+				break;
+			}
+			size_t section_name_end_pos = tpl.find("]]", section_name_start_pos);
+			if (section_name_end_pos == std::string::npos) {
+				return Error{ "Syntax error in template '" + inputTemplate.string() + "': Section name starting at position " + std::to_string(section_name_start_pos) + " never ends." };
+			}
+			section_name_start_pos += 2;
+			std::string section_name = tpl.substr(section_name_start_pos, section_name_end_pos - section_name_start_pos);
+			if (section_name == targetSectionName) {
+				section_end_pos = tpl.find("[[", section_name_end_pos + 2);
+				state = ParserState::InSection;
+			}
+			pos = section_name_end_pos + 2;
+			break;
+		}
+		case ParserState::InSection: {
+			// Look for the beginning of an expression
+			size_t expr_start_pos = tpl.find("{{", pos);
+			if (expr_start_pos >= section_end_pos) {
+				size_t end =
+					section_end_pos == std::string::npos
+					? tpl.size()
+					: section_end_pos;
+				out.write(&*tpl.begin() + pos, end - pos);
+				state = ParserState::Done;
+				break;
+			}
+			size_t expr_end_pos = tpl.find("}}", expr_start_pos);
+			if (expr_end_pos == std::string::npos) {
+				return Error{ "Syntax error in template '" + inputTemplate.string() + "': Expression starting at position " + std::to_string(expr_start_pos) + " never ends." };
+			}
+
+			out.write(&*tpl.begin() + pos, expr_start_pos - pos);
+
+			expr_start_pos += 2;
+			std::string expr = tpl.substr(expr_start_pos, expr_end_pos - expr_start_pos);
+			// TODO
+			if (expr == "foo") {
+				out << "FOO!";
+			}
+			pos = expr_end_pos + 2;
+			break;
+		}
+		}
+	}
+
+	return out.str();
+}
+
 Result<Void, Error> generateCppBinding(
 	Slang::ComPtr<IComponentType> program,
 	[[maybe_unused]] const std::vector<std::string>& entryPoints,
-	[[maybe_unused]] const std::filesystem::path& outputHpp,
-	[[maybe_unused]] const std::filesystem::path& outputCpp,
+	const std::filesystem::path& inputTemplate,
+	const std::filesystem::path& outputHpp,
+	const std::filesystem::path& outputCpp,
 	[[maybe_unused]] const std::filesystem::path& inputSlang // only to give context in error messages
 ) {
 	LOG(INFO) << "Getting reflection information...";
@@ -218,6 +297,20 @@ Result<Void, Error> generateCppBinding(
 		}
 	}
 
+	LOG(INFO) << "Loading binding template from " << inputTemplate << "...";
+	std::string tpl;
+	TRY_ASSIGN(tpl, loadTextFile(inputTemplate));
+
+	LOG(INFO) << "Generating binding header into " << outputHpp << "...";
+	std::string hpp;
+	TRY_ASSIGN(hpp, generateCppBinding(tpl, "header", inputTemplate));
+	TRY(saveTextFile(outputHpp, hpp));
+
+	LOG(INFO) << "Generating binding implementation into " << outputCpp << "...";
+	std::string cpp;
+	TRY_ASSIGN(cpp, generateCppBinding(tpl, "implementation", inputTemplate));
+	TRY(saveTextFile(outputCpp, cpp));
+
 	return {};
 }
 
@@ -246,9 +339,14 @@ Result<Void, Error> run(const Arguments& args) {
 		if (args.outputCpp.empty()) {
 			return Error{ "Option --output-cpp must be non-empty when --output-hpp is non-empty."};
 		}
+		if (args.inputTemplate.empty()) {
+			return Error{ "Option --input-template must be non-empty when --output-hpp is non-empty." };
+		}
+		
 		TRY(generateCppBinding(
 			program,
 			args.entryPoints,
+			args.inputTemplate,
 			args.outputHpp,
 			args.outputCpp,
 			args.inputSlang
