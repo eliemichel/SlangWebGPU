@@ -66,3 +66,11 @@ struct Kernel {
 > Our binding generator does not handle every single one of the many cases of bindings that Slang supports. To add extra mechanism, go have a look at `BindingGenerator` in `src/generator/main.cpp`.
 
 8. Split the CMake build into two stages to be able to separately build the generator and the examples when cross-compiling to WebAssembly (because the generator must be built for the host system, rather than for the target system). Following instructions from [CMake documentation](https://cmake.org/cmake/help/book/mastering-cmake/chapter/Cross%20Compiling%20With%20CMake.html#running-executables-built-in-the-project) about cross-compilation.
+
+Internal notes
+--------------
+
+```bash
+# Memo to look for TODOs:
+grep -R TODO --exclude-dir=build* --exclude-dir=third_party
+```

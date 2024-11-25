@@ -28,8 +28,21 @@ target_link_slang_shaders(slang_webgpu_example_no_codegen
 )
 
 # Let our source code know where to find the generated WGSL shader through
-# a preprocessor variable
-target_compile_definitions(slang_webgpu_example_no_codegen
-	PRIVATE
-	SHADER_DIR="${CMAKE_CURRENT_BINARY_DIR}/shaders/"
-)
+# a preprocessor variable. When using emscripten, this also loads the shader
+# into the app's data bundle.
+# TODO: Add a mode were relative path is used
+if (EMSCRIPTEN)
+	target_link_options(slang_webgpu_example_no_codegen
+		PRIVATE
+		--preload-file ${CMAKE_CURRENT_BINARY_DIR}/shaders@shaders
+	)
+	target_compile_definitions(slang_webgpu_example_no_codegen
+		PRIVATE
+		SHADER_DIR="shaders/"
+	)
+else (EMSCRIPTEN)
+	target_compile_definitions(slang_webgpu_example_no_codegen
+		PRIVATE
+		SHADER_DIR="${CMAKE_CURRENT_BINARY_DIR}/shaders/"
+	)
+endif (EMSCRIPTEN)
