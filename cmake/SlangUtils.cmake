@@ -49,6 +49,10 @@ function(add_slang_shader TargetName)
 	cmake_parse_arguments(arg "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 	# TODO: Handle multiple entry points (generate one compute pipeline for each)
 
+	if (NOT SLANGC)
+		message(FATAL_ERROR "Could not find Slang executable. Provide the SLANGC cache variable or use FindSlang.cmake.")
+	endif()
+
 	# The input slang file
 	set(SLANG_SHADER "${CMAKE_CURRENT_SOURCE_DIR}/${arg_SOURCE}")
 
@@ -129,6 +133,10 @@ function(add_slang_webgpu_kernel TargetName)
 	set(oneValueArgs NAME SOURCE)
 	set(multiValueArgs ENTRY)
 	cmake_parse_arguments(arg "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+	if (NOT TARGET slang_webgpu_generator)
+		message(FATAL_ERROR "Could not find SlangWebGPU generator.")
+	endif()
 
 	# The input slang file
 	set(SLANG_SHADER "${CMAKE_CURRENT_SOURCE_DIR}/${arg_SOURCE}")

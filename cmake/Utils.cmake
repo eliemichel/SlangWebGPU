@@ -4,3 +4,4 @@ macro(set_default_target TargetName)
 		PROPERTY VS_STARTUP_PROJECT ${TargetName}
 	)
 endmacro()
+

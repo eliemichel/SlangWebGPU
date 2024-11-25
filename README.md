@@ -13,10 +13,20 @@ This is a demo of a possible use of [Slang](https://shader-slang.com/) shader co
 - Provides a `add_slang_shader` and `target_link_slang_shader` to help managing Slang shader targets (in `cmake/SlangUtils.cmake`).
 
 > [!WARNING]
-> The WebGPU API is still a Work in Progress at the time I write these lines. **To make sure this setup works**, use the very `webgpu` directory provided in this repository, which fetches the very version of the API for which it was developed (which is [Dawn](https://dawn.googlesource.com/dawn)-specific, BTW).
+> The WebGPU API is still a Work in Progress at the time I write these lines. **To make sure this setup works**, use the very `webgpu` directory provided in this repository, which fetches the very version of the API for which it was developed (which is [Dawn](https://dawn.googlesource.com/dawn)-specific, BTW). When using emscripten, use version **3.1.72**.
 
 > [!NOTE]
 > This example relies on the `webgpu.hpp` and `webgpu-raii.hpp` shallow wrapper of `webgpu.h` provided [WebGPU-distribution](https://github.com/eliemichel/WebGPU-distribution). If this would be a deal-breaker for your use case, you are welcome to **open an issue or a pull request** that addresses this, as there should be no particular blocker to get rid of it.
+
+Building
+--------
+
+```bash
+# In /src/SlangWebGPU
+cmake -B build-generator -DSLANG_WEBGPU_BUILD_EXAMPLES=OFF
+emcmake cmake -B build-web -DSLANG_WEBGPU_BUILD_GENERATOR=OFF -DSlangWebGPU_Generator_DIR=/src/SlangWebGPU/build-generator
+cmake --build build-web
+```
 
 Manually reproducing this repo
 ------------------------------
@@ -50,3 +60,5 @@ struct Kernel {
 
 > [!WARNING]
 > Our binding generator does not handle every single one of the many cases of bindings that Slang supports. To add extra mechanism, go have a look at `BindingGenerator` in `src/generator/main.cpp`.
+
+8. Split the CMake build into two stages to be able to separately build the generator and the examples when cross-compiling to WebAssembly (because the generator must be built for the host system, rather than for the target system). Following instructions from [CMake documentation](https://cmake.org/cmake/help/book/mastering-cmake/chapter/Cross%20Compiling%20With%20CMake.html#running-executables-built-in-the-project) about cross-compilation.
