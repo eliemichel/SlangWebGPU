@@ -48,7 +48,7 @@ int main(int argc, char* argv[]) {
 	app.add_option("-w,--output-wgsl", args.outputWgsl, "Path to the output WGSL shader source");
 	auto outputHppOpt = app.add_option("-d,--output-hpp", args.outputHpp, "Path to the output C++ header file that define kernels for each entry point");
 	auto outputCppOpt = app.add_option("-c,--output-cpp", args.outputCpp, "Path to the output C++ source file that implements the header file");
-	app.add_option("-e,--entrypoint", args.entryPoints, "Entry points to generate kernel for")
+	app.add_option("-e,--entrypoint,--entrypoints", args.entryPoints, "Entry points to generate kernel for")
 		->required()
 		->delimiter(',');
 	app.add_option("-I,--include-directories", args.includeDirectories, "Directories where to look for includes in slang shader")
