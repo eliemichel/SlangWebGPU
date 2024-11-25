@@ -1,8 +1,8 @@
 
-add_executable(slang_webgpu_example_multiple_entrypoints)
-set_example_target_properties(slang_webgpu_example_multiple_entrypoints)
+add_executable(slang_webgpu_example_02_multiple_entrypoints)
+set_example_target_properties(slang_webgpu_example_02_multiple_entrypoints)
 
-target_sources(slang_webgpu_example_multiple_entrypoints
+target_sources(slang_webgpu_example_02_multiple_entrypoints
 	PRIVATE
 	main.cpp
 )
@@ -19,7 +19,7 @@ add_slang_webgpu_kernel(
 		computeMainIdentity
 )
 
-target_link_libraries(slang_webgpu_example_multiple_entrypoints
+target_link_libraries(slang_webgpu_example_02_multiple_entrypoints
 	PRIVATE
 	webgpu
 	slang_webgpu_common

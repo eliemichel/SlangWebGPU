@@ -1,13 +1,13 @@
 
-add_executable(slang_webgpu_example_no_codegen)
-set_example_target_properties(slang_webgpu_example_no_codegen)
+add_executable(slang_webgpu_example_00_no_codegen)
+set_example_target_properties(slang_webgpu_example_00_no_codegen)
 
-target_sources(slang_webgpu_example_no_codegen
+target_sources(slang_webgpu_example_00_no_codegen
 	PRIVATE
 	main.cpp
 )
 
-target_link_libraries(slang_webgpu_example_no_codegen
+target_link_libraries(slang_webgpu_example_00_no_codegen
 	PRIVATE
 	webgpu
 	slang_webgpu_common
@@ -23,7 +23,7 @@ add_slang_shader(
 
 # Make sure the shader compilation is called whenever we need to build this
 # example
-target_link_slang_shaders(slang_webgpu_example_no_codegen
+target_link_slang_shaders(slang_webgpu_example_00_no_codegen
 	add_buffers
 )
 
@@ -32,16 +32,16 @@ target_link_slang_shaders(slang_webgpu_example_no_codegen
 # into the app's data bundle.
 # TODO: Add a mode were relative path is used
 if (EMSCRIPTEN)
-	target_link_options(slang_webgpu_example_no_codegen
+	target_link_options(slang_webgpu_example_00_no_codegen
 		PRIVATE
 		--preload-file ${CMAKE_CURRENT_BINARY_DIR}/shaders@shaders
 	)
-	target_compile_definitions(slang_webgpu_example_no_codegen
+	target_compile_definitions(slang_webgpu_example_00_no_codegen
 		PRIVATE
 		SHADER_DIR="shaders/"
 	)
 else (EMSCRIPTEN)
-	target_compile_definitions(slang_webgpu_example_no_codegen
+	target_compile_definitions(slang_webgpu_example_00_no_codegen
 		PRIVATE
 		SHADER_DIR="${CMAKE_CURRENT_BINARY_DIR}/shaders/"
 	)

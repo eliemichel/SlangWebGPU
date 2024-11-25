@@ -45,7 +45,7 @@
 function(add_slang_shader TargetName)
 	set(options)
 	set(oneValueArgs SOURCE ENTRY)
-	set(multiValueArgs)
+	set(multiValueArgs SLANG_INCLUDE_DIRECTORIES)
 	cmake_parse_arguments(arg "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
 	if (NOT SLANGC)
@@ -60,6 +60,21 @@ function(add_slang_shader TargetName)
 	cmake_path(GET arg_SOURCE STEM LAST_ONLY stem)
 	set(WGSL_SHADER_DIR "${CMAKE_CURRENT_BINARY_DIR}/${parent}")
 	set(WGSL_SHADER "${WGSL_SHADER_DIR}/${stem}.wgsl")
+
+	# Dependency file
+	set(DEPFILE "${CMAKE_CURRENT_BINARY_DIR}/${TargetName}.depfile")
+	if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.21.0")
+		set(DEPFILE_OPT "DEPFILE ${DEPFILE}")
+	else()
+		set(DEPFILE_OPT "")
+		message(WARNING "Using a version of CMake older than 3.21 does not allow keeping track of Slang files imported in each others when building the compilation dependency graph. You may need to manually trigger shader transpilation.")
+	endif()
+
+	# Extra include directories
+	set(INCLUDE_DIRECTORY_OPTS)
+	foreach (dir ${arg_INCLUDE_DIRECTORIES})
+		list(APPEND INCLUDE_DIRECTORY_OPTS "-I${dir}")
+	endforeach()
 
 	# Target that represents the generated WGSL file in the dependency graph.
 	add_custom_target(${TargetName}
@@ -82,11 +97,13 @@ function(add_slang_shader TargetName)
 			-entry ${arg_ENTRY}
 			-target wgsl
 			-o ${WGSL_SHADER}
+			-depfile ${DEPFILE}
+			${INCLUDE_DIRECTORY_OPTS}
 		MAIN_DEPENDENCY
 			${SLANG_SHADER}
 		DEPENDS
 			${SLANGC}
-		# TODO: Add implicit dependencies by tracking includes
+		${DEPFILE_OPT}
 	)
 
 	set_target_properties(${TargetName}
@@ -130,7 +147,7 @@ endfunction(target_link_slang_shaders)
 function(add_slang_webgpu_kernel TargetName)
 	set(options)
 	set(oneValueArgs NAME SOURCE)
-	set(multiValueArgs ENTRY)
+	set(multiValueArgs ENTRY SLANG_INCLUDE_DIRECTORIES)
 	cmake_parse_arguments(arg "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
 	if (NOT TARGET slang_webgpu_generator)
@@ -149,14 +166,24 @@ function(add_slang_webgpu_kernel TargetName)
 	set(KERNEL_HEADER "${CMAKE_CURRENT_BINARY_DIR}/generated/${arg_NAME}Kernel.h")
 	set(KERNEL_IMPLEM "${CMAKE_CURRENT_BINARY_DIR}/generated/${arg_NAME}Kernel.cpp")
 
-	set(ENTRYPOINTS)
-	foreach(EP ${arg_ENTRY})
-		if (NOT ENTRYPOINTS)
-			set(ENTRYPOINTS "${EP}")
-		else()
-			set(ENTRYPOINTS "${ENTRYPOINTS},${EP}")
-		endif()
-	endforeach()
+	set(ENTRYPOINTS ${arg_ENTRY})
+
+	set(INCLUDE_DIRECTORIES ${arg_SLANG_INCLUDE_DIRECTORIES})
+	list(APPEND INCLUDE_DIRECTORIES ${SLANG_SHADER_DIR})
+
+	set(DEPFILE "${CMAKE_CURRENT_BINARY_DIR}/${TargetName}.depfile")
+
+	set(DEPFILE_OPT)
+	if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.21.0")
+		list(APPEND DEPFILE_OPT "DEPFILE" "${DEPFILE}")
+	else()
+		message(WARNING "Using a version of CMake older than 3.21 does not allow keeping track of Slang files imported in each others when building the compilation dependency graph. You may need to manually trigger shader transpilation.")
+	endif()
+
+	set(CODEGEN "")
+	if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.31.0")
+		list(APPEND CODEGEN "CODEGEN")
+	endif()
 
 	# Command that give the recipe to transpile slang into WGSL
 	# i.e., internal behavior of the target ${TargetName} defined above
@@ -177,13 +204,15 @@ entry point '${arg_ENTRY}'..."
 			--entrypoints ${ENTRYPOINTS}
 			--output-hpp ${KERNEL_HEADER}
 			--output-cpp ${KERNEL_IMPLEM}
-			--include-directories ${SLANG_SHADER_DIR}
+			--output-depfile ${DEPFILE}
+			--include-directories ${INCLUDE_DIRECTORIES}
 		MAIN_DEPENDENCY
 			${SLANG_SHADER}
 		DEPENDS
 			${GENERATOR}
 			${TEMPLATE}
-		# TODO: Add implicit dependencies by tracking includes
+		${CODEGEN_OPT}
+		${DEPFILE_OPT}
 	)
 
 	# Target that builds the generated binding

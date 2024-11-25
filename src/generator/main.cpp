@@ -28,6 +28,7 @@ struct Arguments {
 	std::filesystem::path outputWgsl;
 	std::filesystem::path outputHpp;
 	std::filesystem::path outputCpp;
+	std::filesystem::path outputDepfile;
 	std::vector<std::string> entryPoints;
 	std::vector<std::string> includeDirectories;
 };
@@ -47,13 +48,14 @@ int main(int argc, char* argv[]) {
 	auto inputTemplateOpt = app.add_option("-t,--input-template", args.inputTemplate, "Path to the template used to generate binding source")
 		->check(CLI::ExistingFile);
 	app.add_option("-w,--output-wgsl", args.outputWgsl, "Path to the output WGSL shader source");
-	auto outputHppOpt = app.add_option("-d,--output-hpp", args.outputHpp, "Path to the output C++ header file that define kernels for each entry point");
+	auto outputHppOpt = app.add_option("-g,--output-hpp", args.outputHpp, "Path to the output C++ header file that define kernels for each entry point");
 	auto outputCppOpt = app.add_option("-c,--output-cpp", args.outputCpp, "Path to the output C++ source file that implements the header file");
+	app.add_option("-d,--output-depfile", args.outputDepfile, "Path to the depfile that lists dependencies of the shader through import statements. This is designed to be used with CMake's DEPFILE option in add_custom_command().");
 	app.add_option("-e,--entrypoint,--entrypoints", args.entryPoints, "Entry points to generate kernel for")
 		->required()
-		->delimiter(',');
+		->delimiter(';');
 	app.add_option("-I,--include-directories", args.includeDirectories, "Directories where to look for includes in slang shader")
-		->delimiter(',');
+		->delimiter(';');
 
 	// These options need each others
 	outputHppOpt->needs(outputCppOpt, inputTemplateOpt);
@@ -107,8 +109,13 @@ Result<Slang::ComPtr<ISession>, Error> createSlangSession(
 	return session;
 }
 
-Result<Slang::ComPtr<IComponentType>, Error> loadSlangModule(
-	Slang::ComPtr<ISession> session,
+struct ModuleInfo {
+	Slang::ComPtr<IComponentType> program;
+	std::vector<std::string> dependencyFiles;
+};
+
+Result<ModuleInfo, Error> loadSlangModule(
+	const Slang::ComPtr<ISession>& session,
 	const std::string& name,
 	const std::filesystem::path& inputSlang,
 	const std::vector<std::string>& entryPoints
@@ -117,7 +124,7 @@ Result<Slang::ComPtr<IComponentType>, Error> loadSlangModule(
 	// This function is highly based on instructions found at
 	// https://shader-slang.com/slang/user-guide/compiling#using-the-compilation-api
 
-	LOG(INFO) << "Loading file '" << inputSlang << "'...";
+	LOG(INFO) << "Loading file " << inputSlang << "...";
 	std::string source;
 	TRY_ASSIGN(source, loadTextFile(inputSlang));
 
@@ -132,6 +139,14 @@ Result<Slang::ComPtr<IComponentType>, Error> loadSlangModule(
 	if (diagnostics) {
 		std::string message = (const char*)diagnostics->getBufferPointer();
 		return Error{ "Could not load slang module from file '" + inputSlang.string() + "': " + message };
+	}
+
+	int depCount = module->getDependencyFileCount();
+	std::vector<std::string> dependencyFiles(depCount);
+	LOG(INFO) << "Found " << depCount << " dependencies:";
+	for (int i = 0; i < depCount; ++i) {
+		dependencyFiles[i] = module->getDependencyFilePath(i);
+		LOG(INFO) << " - " << dependencyFiles[i];
 	}
 
 	LOG(INFO) << "Composing shader program...";
@@ -151,11 +166,14 @@ Result<Slang::ComPtr<IComponentType>, Error> loadSlangModule(
 	Slang::ComPtr<IComponentType> program;
 	TRY_SLANG(session->createCompositeComponentType(components.data(), components.size(), program.writeRef()));
 
-	return program;
+	return ModuleInfo{
+		program,
+		dependencyFiles
+	};
 }
 
 Result<std::string, Error> compileToWgsl(
-	Slang::ComPtr<IComponentType> program,
+	const Slang::ComPtr<IComponentType>& program,
 	const std::filesystem::path& inputSlang // only to give context in error messages
 ) {
 
@@ -185,6 +203,7 @@ Result<std::string, Error> compileToWgsl(
 	}
 
 	std::string wgslSource = (const char*)codeBlob->getBufferPointer();
+
 	return wgslSource;
 }
 
@@ -532,7 +551,7 @@ private:
 };
 
 Result<Void, Error> generateCppBinding(
-	Slang::ComPtr<IComponentType> program,
+	const Slang::ComPtr<IComponentType>& program,
 	const std::string& name,
 	[[maybe_unused]] const std::vector<std::string>& entryPoints,
 	const std::filesystem::path& inputTemplate,
@@ -562,13 +581,32 @@ Result<Void, Error> generateCppBinding(
 	return {};
 }
 
+Result<Void, Error> generateDepfile(
+	const std::vector<std::string>& dependencyFiles,
+	const std::filesystem::path& outputDepfile,
+	const std::filesystem::path& outputHpp,
+	const std::filesystem::path& outputCpp
+) {
+	LOG(INFO) << "Generating dependency file into " << outputDepfile << "...";
+	std::ostringstream out;
+	for (const auto& generated : { outputHpp, outputCpp }) {
+		out << generated.string() << ":";
+		for (const auto& dep : dependencyFiles) {
+			out << " \\\n\t" << dep;
+		}
+		out << "\n";
+	}
+	TRY(saveTextFile(outputDepfile, out.str()));
+	return {};
+}
+
 Result<Void, Error> run(const Arguments& args) {
 
 	Slang::ComPtr<ISession> session;
 	TRY_ASSIGN(session, createSlangSession(args.includeDirectories));
 
-	Slang::ComPtr<IComponentType> program;
-	TRY_ASSIGN(program, loadSlangModule(
+	ModuleInfo moduleInfo;
+	TRY_ASSIGN(moduleInfo, loadSlangModule(
 		session,
 		args.name,
 		args.inputSlang,
@@ -577,7 +615,7 @@ Result<Void, Error> run(const Arguments& args) {
 
 	std::string wgslSource;
 	TRY_ASSIGN(wgslSource, compileToWgsl(
-		program,
+		moduleInfo.program,
 		args.inputSlang
 	));
 
@@ -595,11 +633,20 @@ Result<Void, Error> run(const Arguments& args) {
 		}
 		
 		TRY(generateCppBinding(
-			program,
+			moduleInfo.program,
 			args.name,
 			args.entryPoints,
 			args.inputTemplate,
 			wgslSource,
+			args.outputHpp,
+			args.outputCpp
+		));
+	}
+
+	if (!args.outputDepfile.empty()) {
+		TRY(generateDepfile(
+			moduleInfo.dependencyFiles,
+			args.outputDepfile,
 			args.outputHpp,
 			args.outputCpp
 		));

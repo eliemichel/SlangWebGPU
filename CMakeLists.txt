@@ -63,6 +63,6 @@ add_subdirectory(src)
 
 if (SLANG_WEBGPU_BUILD_EXAMPLES)
 	add_subdirectory(examples)
-	set_default_target(slang_webgpu_example)
+	set_default_target(slang_webgpu_example_02_multiple_entrypoints)
 endif()
 
