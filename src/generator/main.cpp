@@ -352,7 +352,7 @@ public:
 				std::visit(overloaded{
 					[&](const BufferBindingInfo&) {
 						out << "entries[" << i << "].buffer = " << parameter->getName() << ";" << nl;
-						out << "entries[" << i << "].size.type = " << parameter->getName() << ".getSize();";
+						out << "entries[" << i << "].size = " << parameter->getName() << ".getSize();";
 					}
 				}, info);
 			}));

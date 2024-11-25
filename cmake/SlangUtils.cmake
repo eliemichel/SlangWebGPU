@@ -30,7 +30,11 @@
 #############################################
 # Define a shader target, which is a custom target responsible for transpiling
 # a slang shader into a WGSL shader.
-# This target may then be used with target_link_slang_shaders
+# This target may then be used with target_link_slang_shaders.
+#
+# NB: This function only requires SLANGC to be set to the Slang compiler; it
+# does not rely on any other mechanism specific to this repository so you may
+# copy-paste it into your project.
 #
 # Example:
 #   add_slang_shader(
@@ -103,16 +107,25 @@ endfunction(target_link_slang_shaders)
 
 
 #############################################
-# TODO: document
-function(generate_slang_webgpu_binding TargetBaseName)
+# Create a target whose code is automatically generated from a Slang source
+# file. This generates a class ${NAME}Kernel that targets which link to this
+# target may use with include generated/${NAME}Kernel.h.
+#
+# NB: Contrary to 'add_slang_shader', this function is more tied to this
+# repository's mechanism: it needs our code generator target to be defined.
+#
+# Example:
+#   add_slang_webgpu_kernel(
+#     generate_hello_world_kernel
+#     NAME HelloWorld
+#     SOURCE shaders/hello-world.slang
+#     ENTRY computeMain
+#   )
+function(add_slang_webgpu_kernel TargetName)
 	set(options)
 	set(oneValueArgs NAME SOURCE)
 	set(multiValueArgs ENTRY)
 	cmake_parse_arguments(arg "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
-
-	# This function creates two targets based on the provided target base name
-	set(WgslTarget generate_${TargetBaseName}_wgsl)
-	set(BindingTarget generate_${TargetBaseName}_binding)
 
 	# The input slang file
 	set(SLANG_SHADER "${CMAKE_CURRENT_SOURCE_DIR}/${arg_SOURCE}")
@@ -128,20 +141,20 @@ function(generate_slang_webgpu_binding TargetBaseName)
 	set(WGSL_SHADER "${CMAKE_CURRENT_BINARY_DIR}/${parent}/${stem}.wgsl")
 
 	# The generated C++ source
-	set(GEN_HEADER "${CMAKE_CURRENT_BINARY_DIR}/${arg_NAME}Kernel.h")
-	set(GEN_IMPLEM "${CMAKE_CURRENT_BINARY_DIR}/${arg_NAME}Kernel.cpp")
+	set(KERNEL_HEADER "${CMAKE_CURRENT_BINARY_DIR}/generated/${arg_NAME}Kernel.h")
+	set(KERNEL_IMPLEM "${CMAKE_CURRENT_BINARY_DIR}/generated/${arg_NAME}Kernel.cpp")
 
 	# Command that give the recipe to transpile slang into WGSL
 	# i.e., internal behavior of the target ${TargetName} defined above
 	add_custom_command(
 		COMMENT
 			"Generating Slang-WebGPU binding '${arg_NAME}Kernel' for shader \
-			'${SLANG_SHADER}' into '${WGSL_SHADER}' and '${GEN_HEADER}' with \
+			'${SLANG_SHADER}' into '${WGSL_SHADER}' and '${KERNEL_HEADER}' with \
 			entry point '${arg_ENTRY}'..."
 		OUTPUT
 			${WGSL_SHADER}
-			${GEN_HEADER}
-			${GEN_IMPLEM}
+			${KERNEL_HEADER}
+			${KERNEL_IMPLEM}
 		COMMAND
 			${GENERATOR}
 			--name ${arg_NAME}
@@ -149,8 +162,8 @@ function(generate_slang_webgpu_binding TargetBaseName)
 			--input-template ${TEMPLATE}
 			--entrypoints ${arg_ENTRY}
 			--output-wgsl ${WGSL_SHADER}
-			--output-hpp ${GEN_HEADER}
-			--output-cpp ${GEN_IMPLEM}
+			--output-hpp ${KERNEL_HEADER}
+			--output-cpp ${KERNEL_IMPLEM}
 			--include-directories ${SLANG_SHADER_DIR}
 		MAIN_DEPENDENCY
 			${SLANG_SHADER}
@@ -161,31 +174,26 @@ function(generate_slang_webgpu_binding TargetBaseName)
 		# TODO: Add implicit dependencies by tracking includes
 	)
 
-	# Target that represents the generated WGSL file in the dependency graph.
-	add_custom_target(${WgslTarget}
-		DEPENDS
-		${WGSL_SHADER}
-	)
-	set_target_properties(${WgslTarget}
-		PROPERTIES
-		FOLDER "SlangWebGPU/shaders"
-	)
-
 	# Target that builds the generated binding
-	add_library(${BindingTarget} STATIC)
-	set_common_target_properties(${BindingTarget})
-	target_sources(${BindingTarget}
+	add_library(${TargetName} STATIC)
+	set_common_target_properties(${TargetName})
+	target_sources(${TargetName}
 		PRIVATE
-		${GEN_HEADER}
-		${GEN_IMPLEM}
+		${KERNEL_HEADER}
+		${KERNEL_IMPLEM}
 	)
-	set_target_properties(${BindingTarget}
+	set_target_properties(${TargetName}
 		PROPERTIES
 		FOLDER "SlangWebGPU/codegen"
 	)
 	# To be able to include "generated/FooKernel.h"
-	target_include_directories(${BindingTarget}
+	target_include_directories(${TargetName}
 		PUBLIC
 		${CMAKE_CURRENT_BINARY_DIR}
 	)
-endfunction(generate_slang_webgpu_binding)
+	target_link_libraries(${TargetName}
+		PUBLIC
+		webgpu
+		slang_webgpu_common
+	)
+endfunction(add_slang_webgpu_kernel)

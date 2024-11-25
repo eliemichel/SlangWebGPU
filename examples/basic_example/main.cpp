@@ -2,7 +2,7 @@
 // file, and before including webgpu C++ header (see https://github.com/eliemichel/WebGPU-Cpp)
 #define WEBGPU_CPP_IMPLEMENTATION
 
-// Header generated from add-buffers.slang (see config in CMakeLists.txt)
+// Header generated from hello-world.slang (see config in CMakeLists.txt)
 #include "generated/HelloWorldKernel.h"
 
 #include <slang-webgpu/common/result.h>

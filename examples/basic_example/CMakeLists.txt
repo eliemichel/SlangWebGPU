@@ -23,18 +23,14 @@ target_link_slang_shaders(slang_webgpu_example
 	hello_world
 )
 
-generate_slang_webgpu_binding(
-	add_buffers
-	NAME AddBuffer
+add_slang_webgpu_kernel(
+	generate_hello_world_kernel
+	NAME HelloWorld
 	SOURCE shaders/hello-world.slang
 	ENTRY computeMain
 )
 
 target_link_libraries(slang_webgpu_example
 	PRIVATE
-	generate_add_buffers_binding
-)
-add_dependencies(
-	slang_webgpu_example
-	generate_add_buffers_wgsl
+	generate_hello_world_kernel
 )
