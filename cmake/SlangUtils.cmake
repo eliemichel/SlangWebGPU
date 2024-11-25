@@ -63,16 +63,16 @@ function(add_slang_shader TargetName)
 
 	# Dependency file
 	set(DEPFILE "${CMAKE_CURRENT_BINARY_DIR}/${TargetName}.depfile")
+	set(DEPFILE_OPT)
 	if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.21.0")
-		set(DEPFILE_OPT "DEPFILE ${DEPFILE}")
+		list(APPEND DEPFILE_OPT "DEPFILE" "${DEPFILE}")
 	else()
-		set(DEPFILE_OPT "")
-		message(WARNING "Using a version of CMake older than 3.21 does not allow keeping track of Slang files imported in each others when building the compilation dependency graph. You may need to manually trigger shader transpilation.")
+		message(AUTHOR_WARNING "Using a version of CMake older than 3.21 does not allow keeping track of Slang files imported in each others when building the compilation dependency graph. You may need to manually trigger shader transpilation.")
 	endif()
 
 	# Extra include directories
 	set(INCLUDE_DIRECTORY_OPTS)
-	foreach (dir ${arg_INCLUDE_DIRECTORIES})
+	foreach (dir ${arg_SLANG_INCLUDE_DIRECTORIES})
 		list(APPEND INCLUDE_DIRECTORY_OPTS "-I${dir}")
 	endforeach()
 
@@ -168,7 +168,11 @@ function(add_slang_webgpu_kernel TargetName)
 
 	set(ENTRYPOINTS ${arg_ENTRY})
 
-	set(INCLUDE_DIRECTORIES ${arg_SLANG_INCLUDE_DIRECTORIES})
+	set(INCLUDE_DIRECTORIES)
+	foreach (dir ${arg_SLANG_INCLUDE_DIRECTORIES})
+		cmake_path(ABSOLUTE_PATH dir BASE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" NORMALIZE OUTPUT_VARIABLE abs_dir)
+		list(APPEND INCLUDE_DIRECTORIES "${abs_dir}")
+	endforeach()
 	list(APPEND INCLUDE_DIRECTORIES ${SLANG_SHADER_DIR})
 
 	set(DEPFILE "${CMAKE_CURRENT_BINARY_DIR}/${TargetName}.depfile")
@@ -177,7 +181,7 @@ function(add_slang_webgpu_kernel TargetName)
 	if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.21.0")
 		list(APPEND DEPFILE_OPT "DEPFILE" "${DEPFILE}")
 	else()
-		message(WARNING "Using a version of CMake older than 3.21 does not allow keeping track of Slang files imported in each others when building the compilation dependency graph. You may need to manually trigger shader transpilation.")
+		message(AUTHOR_WARNING "Using a version of CMake older than 3.21 does not allow keeping track of Slang files imported in each others when building the compilation dependency graph. You may need to manually trigger shader transpilation.")
 	endif()
 
 	set(CODEGEN "")

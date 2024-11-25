@@ -1,6 +1,7 @@
 #pragma once
 
 #include <variant>
+#include <cstdint>
 
 // Utility types shared by all generated Kernel classes
 

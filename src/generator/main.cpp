@@ -93,6 +93,12 @@ Result<Slang::ComPtr<ISession>, Error> createSlangSession(
 	sessionDesc.targets = &target;
 	sessionDesc.targetCount = 1;
 
+	if (!includeDirectories.empty()) {
+		LOG(INFO) << "Extra include directories:";
+		for (const auto& dir : includeDirectories) {
+			LOG(INFO) << " - " << dir;
+		}
+	}
 	std::vector<const char*> includeDirectoriesData(includeDirectories.size());
 	std::transform(
 		includeDirectories.cbegin(),
@@ -138,9 +144,10 @@ Result<ModuleInfo, Error> loadSlangModule(
 	);
 	if (diagnostics) {
 		std::string message = (const char*)diagnostics->getBufferPointer();
-		return Error{ "Could not load slang module from file '" + inputSlang.string() + "': " + message };
+		return Error{ "Could not load slang module from file '" + inputSlang.string() + "':\n" + message };
 	}
 
+	// Collect dependencies
 	int depCount = module->getDependencyFileCount();
 	std::vector<std::string> dependencyFiles(depCount);
 	LOG(INFO) << "Found " << depCount << " dependencies:";
