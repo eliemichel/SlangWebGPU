@@ -14,6 +14,7 @@
 #include <functional>
 #include <variant>
 #include <string_view>
+#include <optional>
 
 using namespace slang;
 using magic_enum::enum_name;
@@ -74,7 +75,13 @@ int main(int argc, char* argv[]) {
 	return 0;
 }
 
-Result<Slang::ComPtr<ISession>, Error> createSlangSession(
+struct SessionInfo {
+	// We need to keep the global session alive throughout the entire program.
+	Slang::ComPtr<IGlobalSession> globalSession;
+	Slang::ComPtr<ISession> session;
+};
+
+Result<SessionInfo, Error> createSlangSession(
 	std::vector<std::string> includeDirectories
 ) {
 
@@ -82,8 +89,8 @@ Result<Slang::ComPtr<ISession>, Error> createSlangSession(
 	// https://shader-slang.com/slang/user-guide/compiling#using-the-compilation-api
 
 	LOG(INFO) << "Creating global Slang session...";
-	Slang::ComPtr<IGlobalSession> globalSession;
-	TRY_SLANG(createGlobalSession(globalSession.writeRef()));
+	SessionInfo sessionInfo;
+	TRY_SLANG(createGlobalSession(sessionInfo.globalSession.writeRef()));
 
 	LOG(INFO) << "Creating Slang session...";
 	SessionDesc sessionDesc;
@@ -109,10 +116,9 @@ Result<Slang::ComPtr<ISession>, Error> createSlangSession(
 	sessionDesc.searchPaths = includeDirectoriesData.data();
 	sessionDesc.searchPathCount = includeDirectoriesData.size();
 
-	Slang::ComPtr<ISession> session;
-	TRY_SLANG(globalSession->createSession(sessionDesc, session.writeRef()));
+	TRY_SLANG(sessionInfo.globalSession->createSession(sessionDesc, sessionInfo.session.writeRef()));
 
-	return session;
+	return sessionInfo;
 }
 
 struct ModuleInfo {
@@ -275,7 +281,7 @@ Result<std::string, Error> generateFromTemplate(
 					section_end_pos == std::string::npos
 					? tpl.size()
 					: section_end_pos;
-				out.write(&*tpl.begin() + pos, end - pos);
+				if (emit) out.write(&*tpl.begin() + pos, end - pos);
 				state = ParserState::Done;
 				break;
 			}
@@ -284,7 +290,7 @@ Result<std::string, Error> generateFromTemplate(
 				return Error{ "Syntax error: Expression starting at position " + std::to_string(expr_start_pos) + " never ends." };
 			}
 
-			out.write(&*tpl.begin() + pos, expr_start_pos - pos);
+			if (emit) out.write(&*tpl.begin() + pos, expr_start_pos - pos);
 
 			expr_start_pos += 2;
 			std::string expr = tpl.substr(expr_start_pos, expr_end_pos - expr_start_pos);
@@ -326,7 +332,7 @@ Result<std::string, Error> generateFromTemplate(
 				}
 			}
 			else {
-				TRY(generator.processExpression(expr, out));
+				if (emit) TRY(generator.processExpression(expr, out));
 			}
 			break;
 		}
@@ -346,6 +352,7 @@ public:
 	// Type that describe the reflection information that we extract from Slang reflection API.
 	struct BufferBindingInfo {
 		std::string type;
+		std::optional<size_t> minBindingSize;
 	};
 	using BindingInfo = std::variant<BufferBindingInfo>;
 
@@ -428,6 +435,9 @@ public:
 				out << "layoutEntries[" << i << "].visibility = ShaderStage::Compute;" << nl;
 				std::visit(overloaded{
 					[&](const BufferBindingInfo& bufferBinding) {
+						if (bufferBinding.minBindingSize.has_value()) {
+							out << "layoutEntries[" << i << "].buffer.minBindingSize = " << bufferBinding.minBindingSize.value() << ";" << nl;
+						}
 						out << "layoutEntries[" << i << "].buffer.type = BufferBindingType::" << bufferBinding.type << ";";
 					}
 				}, info);
@@ -490,7 +500,7 @@ public:
 		}
 		else if (iterator_name == "entryPointCount == 1") {
 			size_t entryPointCount = size_t(m_layout->getEntryPointCount());
-			return entryPointCount == 1;
+			return entryPointCount != 1; // 'iteratorEnded' is the inverse of the if condition
 		}
 		else {
 			return Error{ "Invalid iterator name: " + iterator_name };
@@ -509,45 +519,62 @@ private:
 		for (unsigned i = 0; i < parameterCount; ++i) {
 			VariableLayoutReflection* parameter = m_layout->getParameterByIndex(i);
 			ParameterCategory category = parameter->getCategory();
-			TRY_ASSERT(
-				category == ParameterCategory::DescriptorTableSlot,
-				"Other categories than 'descriptor table slot' are not supported, but found category '" << enum_name(category) << "'"
-			);
+			TypeLayoutReflection* typeLayout = parameter->getTypeLayout();
+			TypeReflection::Kind kind = typeLayout->getKind();
+
 			TRY_ASSERT(
 				parameter->getBindingSpace() == 0,
 				"Use of more than one bind group is not supported."
 			);
 
-			TypeLayoutReflection* typeLayout = parameter->getTypeLayout();
-			TypeReflection::Kind kind = typeLayout->getKind();
-			TRY_ASSERT(
-				kind == TypeReflection::Kind::Resource,
-				"Only resource bindings are supported, but found kind '" << enum_name(kind) << "'"
-			);
-
-			size_t regCount = typeLayout->getSize((SlangParameterCategory)category);
-			TRY_ASSERT(
-				regCount == 1,
-				"Use of multiple bind groups by a single parameter is not supported, but found regCount = " << regCount
-			);
-
-			SlangResourceShape shape = typeLayout->getResourceShape();
-			TRY_ASSERT(
-				shape == SLANG_STRUCTURED_BUFFER,
-				"Only structured buffers are supported, but found resource shape '" << enum_name(shape) << "'"
-			);
+			bool isUniform = false;
+			switch (category) {
+			case ParameterCategory::DescriptorTableSlot: {
+				isUniform = false;
+				TRY_ASSERT(
+					kind == TypeReflection::Kind::Resource,
+					"Only resource bindings are supported, but found kind '" << enum_name(kind) << "'"
+				);
+				size_t regCount = typeLayout->getSize((SlangParameterCategory)category);
+				TRY_ASSERT(
+					regCount == 1,
+					"Use of multiple bind groups by a single parameter is not supported, but found regCount = " << regCount
+				);
+				SlangResourceShape shape = typeLayout->getResourceShape();
+				TRY_ASSERT(
+					shape == SLANG_STRUCTURED_BUFFER,
+					"Only structured buffers are supported, but found resource shape '" << enum_name(shape) << "'"
+				);
+				break;
+			}
+			case ParameterCategory::Uniform:
+				isUniform = true;
+				TRY_ASSERT(
+					kind == TypeReflection::Kind::Struct,
+					"Only Struct uniforms are supported, but found kind '" << enum_name(kind) << "'"
+				);
+				break;
+			default:
+				return Error{ "Parameter category '" + std::string(enum_name(category)) + "' is not supported" };
+			}
 
 			SlangResourceAccess access = typeLayout->getResourceAccess();
 			BufferBindingInfo bufferBinding;
-			switch (access) {
-			case SLANG_RESOURCE_ACCESS_READ:
-				bufferBinding.type = "ReadOnlyStorage";
-				break;
-			case SLANG_RESOURCE_ACCESS_READ_WRITE:
-				bufferBinding.type = "Storage";
-				break;
-			default:
-				return Error{ "SlangResourceAccess '" + std::string(enum_name(access)) + "' is not supported." };
+			if (isUniform) {
+				bufferBinding.type = "Uniform";
+				bufferBinding.minBindingSize = typeLayout->getSize((SlangParameterCategory)category);
+			}
+			else {
+				switch (access) {
+				case SLANG_RESOURCE_ACCESS_READ:
+					bufferBinding.type = "ReadOnlyStorage";
+					break;
+				case SLANG_RESOURCE_ACCESS_READ_WRITE:
+					bufferBinding.type = "Storage";
+					break;
+				default:
+					return Error{ "SlangResourceAccess '" + std::string(enum_name(access)) + "' is not supported." };
+				}
 			}
 
 			visitor(i, parameter, bufferBinding);
@@ -616,12 +643,12 @@ Result<Void, Error> generateDepfile(
 
 Result<Void, Error> run(const Arguments& args) {
 
-	Slang::ComPtr<ISession> session;
-	TRY_ASSIGN(session, createSlangSession(args.includeDirectories));
+	SessionInfo sessionInfo;
+	TRY_ASSIGN(sessionInfo, createSlangSession(args.includeDirectories));
 
 	ModuleInfo moduleInfo;
 	TRY_ASSIGN(moduleInfo, loadSlangModule(
-		session,
+		sessionInfo.session,
 		args.name,
 		args.inputSlang,
 		args.entryPoints

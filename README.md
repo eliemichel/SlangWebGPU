@@ -73,7 +73,12 @@ struct Kernel {
 
 9. Generalize to cases where we want to expose **multiple entry points** from the same shader, hence implementing multiple `dispatch` methods.
 
-10. Progressively complexify the generator to handle slang shader file inclusion (through a Depfile). TODO: autodiff. TODO: custom entry point name
+10. Progressively complexify the generator to handle slang shader file inclusion (through a Depfile).
+TODO: autodiff.
+TODO: custom entry point name
+TODO: uniforms
+TODO: texture
+TODO: backport emscripten changes to webgpu distrib
 
 Internal notes
 --------------

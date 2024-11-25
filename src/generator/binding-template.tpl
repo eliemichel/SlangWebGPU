@@ -105,6 +105,31 @@ public:
 	 */
 	operator bool() const { return m_valid; }
 
+	/**
+	 * Direct access to the lower level bind group layout
+	 */
+	wgpu::BindGroupLayout getBindGroupLayouts() const;
+
+	/**
+	 * Direct access to the lower level pipeline
+	 */
+	wgpu::ComputePipeline getPipeline(uint32_t entryPointIndex) const;
+
+	/**
+	 * Direct access to the lower level workgroup size
+	 */
+	const ThreadCount& getWorkgroupSize(uint32_t entryPointIndex) const;
+
+	/**
+	 * Direct access to the lower level device
+	 */
+	wgpu::Device getDevice() const;
+
+	/**
+	 * Direct access to the lower level WGSL source
+	 */
+	static const char* getWgslSource();
+
 private:
 	static constexpr const char* s_name = "{{kernelLabel}}";
 	static constexpr std::array<ThreadCount,{{entryPointCount}}> s_workgroupSize = {
@@ -277,6 +302,32 @@ void {{kernelName}}Kernel::dispatch(
 	dispatch{{EntryPoint}}(computePass, dispatchSize, bindGroup);
 }
 {{end}}
+
+////////////////////////////////////////////
+// Direct accessors
+
+wgpu::BindGroupLayout {{kernelName}}Kernel::getBindGroupLayouts() const {
+	return *m_bindGroupLayouts[0];
+}
+
+wgpu::ComputePipeline {{kernelName}}Kernel::getPipeline(uint32_t entryPointIndex) const {
+	return *m_pipelines[entryPointIndex];
+}
+
+const ThreadCount& {{kernelName}}Kernel::getWorkgroupSize(uint32_t entryPointIndex) const {
+	return s_workgroupSize[entryPointIndex];
+}
+
+wgpu::Device {{kernelName}}Kernel::getDevice() const {
+	return m_device;
+}
+
+const char* {{kernelName}}Kernel::getWgslSource() {
+	return s_wgslSource;
+}
+
+////////////////////////////////////////////
+// Shader source
 
 const char* {{kernelName}}Kernel::s_wgslSource = R"({{wgslSource}})";
 
