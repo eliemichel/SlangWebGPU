@@ -36,6 +36,7 @@ Outline
 -------
 
 - [Notes](#notes)
+- [What is this?](#what-is-this)
 - [Building](#building)
   * [Compilation of a native app](compilation-of-a-native-app)
   * [Cross-compilation of a WebAssembly module](cross-compilation-of-a-webassembly-module)
@@ -55,6 +56,63 @@ Notes
 > 🤔 Ergl, **I don't want codegen**, but I'm interested in the Slang to WGSL part...
 
 Sure, have a look at [`examples/00_no_codegen`](examples/00_no_codegen). All it needs is `cmake/FetchSlang.cmake` and `cmake/SlangUtils.cmake`, but you can strip down the whole codegen part if you don't like it.
+
+What is this?
+-------------
+
+[Slang](https://shader-slang.com/) is a great modern shader programming language, but of course it does not natively run in WebGPU. One possible **workaround** is to ship the Slang compiler to the client, but this is heavy both in bandwidth and client computation time, so this setup rather transpiles shaders into WGSL (WebGPU shading language) at **compilation time**.
+
+Compiling shaders are one thing, but when working on a shader-intensive application, one easily spends too much time writing **kernel binding boilerplate** rather than actuall business logic (i.e., the nice things we actually want to code). Among Slang's nice features is a [reflection API](https://shader-slang.com/slang/user-guide/reflection.html), which this project benefits from to **automatically generate kernel binding code**.
+
+Let us consider the following example:
+
+```HLSL
+// hello-world.slang
+StructuredBuffer<float> buffer0;
+StructuredBuffer<float> buffer1;
+RWStructuredBuffer<float> result;
+
+[shader("compute")]
+[numthreads(8,1,1)]
+void computeMain(uint3 threadId : SV_DispatchThreadID)
+{
+    uint index = threadId.x;
+    result[index] = buffer0[index] + buffer1[index];
+}
+```
+
+Our automatic code generation will create a `HelloWorldKernel.h` and `HelloWorldKernel.cpp` files that can be used as follows:
+
+```C++
+// main.cpp
+#include "generated/HelloWorldKernel.h"
+
+// (assuming 'device' is a wgpu::Device object)
+generated::HelloWorldKernel kernel(device);
+
+// (assuming 'buffer0', 'buffer1' and 'result' are wgpu::Buffer objects)
+wgpu::BindGroup bindGroup = kernel.createBindGroup(buffer0, buffer1, result);
+
+// First argument can be ThreadCount{ ... } or WorkgroupCount{ ... }
+kernel.dispatch(ThreadCount{ 10 }, bindGroup);
+```
+
+Note for instance how the signature of `createBindGroup` is automatically adapted to the resources declared in the shader.
+
+All it takes to use the generator is to use the custom `add_slang_webgpu_kernel` command that we define in `cmake/SlangUtils.cmake`:
+
+```CMake
+add_slang_webgpu_kernel(
+	generate_hello_world_kernel
+	NAME HelloWorld
+	SOURCE shaders/hello-world.slang
+	ENTRY computeMain
+)
+```
+
+The target `generate_hello_world_kernel` is a static library target that builds `HelloWorldKernel`.
+
+Lastly, this repository provides a basic setup to fetch precompiled Slang library in a CMake project (see `cmake/FetchSlang.cmake`) that is compatible with cross-compilation.
 
 Building
 --------
@@ -140,7 +198,7 @@ Going further
 This repository is only meant to be a demo. To go further, start from one of the examples and progressively turn it into something more complex. You may eventually want to move your example into `src/`. You will probably be tempted to tune the generator a bit and add all sorts of fun extensions: do it!
 
 > [!NOTE]
-> Examples in the [`examples/`](examples) directory are sorted from the less complex to the most complex.
+> Examples in the [`examples/`](examples) directory are sorted from the less complex to the most complex. Each example has its own README.
 
 Limitations
 -----------
