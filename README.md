@@ -31,8 +31,9 @@ emcmake cmake -B build-web -DSLANG_WEBGPU_BUILD_GENERATOR=OFF -DSlangWebGPU_Gene
 cmake --build build-web
 python -m http.server 8000
 # Browse to:
-#  - http://localhost:8000/build-web/examples/basic_example/slang_webgpu_example.html
-#  - http://localhost:8000/build-web/examples/no_codegen/slang_webgpu_example_no_codegen.html
+#  - http://localhost:8000/build-web/examples/00_no_codegen/slang_webgpu_example_no_codegen.html
+#  - http://localhost:8000/build-web/examples/01_basic_example/slang_webgpu_example.html
+#  - http://localhost:8000/build-web/examples/02_multiple_entrypoints/slang_webgpu_example_multiple_entrypoints.html
 ```
 
 Manually reproducing this repo
@@ -72,7 +73,7 @@ struct Kernel {
 
 9. Generalize to cases where we want to expose **multiple entry points** from the same shader, hence implementing multiple `dispatch` methods.
 
-10. TODO: Handle slang shader file inclusion
+10. TODO: Handle slang shader file inclusion. TODO: autodiff. TODO: custom entry point name
 
 Internal notes
 --------------

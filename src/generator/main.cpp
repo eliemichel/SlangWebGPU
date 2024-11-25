@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <functional>
 #include <variant>
+#include <string_view>
 
 using namespace slang;
 using magic_enum::enum_name;
@@ -203,10 +204,20 @@ Result<std::string, Error> generateFromTemplate(
 	};
 	ParserState state = ParserState::Init;
 
+	// For loop/condition stack
+	struct Frame {
+		std::string iterator_name = "";
+		size_t begin_pos = std::string::npos;
+		bool parent_emit = true; // value of "emit" outside of the loop
+		bool is_loop = false; // either a loop or a condition
+	};
+
 	// Losely inspired by https://stackoverflow.com/a/2549643/1549389
 	std::ostringstream out;
 	size_t pos = 0;
 	size_t section_end_pos = std::string::npos;
+	std::vector<Frame> execution_stack;
+	bool emit = true; // switched to false when skipping an empty loop's body
 	while (state != ParserState::Done) {
 		switch (state) {
 		case ParserState::Init: {
@@ -251,8 +262,46 @@ Result<std::string, Error> generateFromTemplate(
 
 			expr_start_pos += 2;
 			std::string expr = tpl.substr(expr_start_pos, expr_end_pos - expr_start_pos);
-			TRY(generator.processExpression(expr, out))
+
 			pos = expr_end_pos + 2;
+			bool is_foreach = expr.rfind("foreach ", 0) == 0;
+			bool is_if = expr.rfind("if ", 0) == 0;
+			if (is_foreach || is_if) {
+				// NB: 'if' is just a 'foreach' on an iterator that has a single entry
+				std::string iterator_name = expr.substr(is_foreach ? 8 : 3);
+				Frame frame = {
+					/*iterator_name=*/iterator_name,
+					/*begin_pos=*/pos,
+					/*parent_emit=*/emit,
+					/*is_loop=*/is_foreach,
+				};
+				TRY(generator.resetIterator(frame.iterator_name));
+				bool ended;
+				TRY_ASSIGN(ended, generator.iteratorEnded(frame.iterator_name));
+				emit = !ended;
+				execution_stack.push_back(frame);
+			}
+			else if (expr == "end") {
+				if (execution_stack.empty()) {
+					return Error{ "Syntax error: Statement {{end}} found while there was no ongoing loop or condition, at position " + std::to_string(expr_start_pos) + "." };
+				}
+				Frame& frame = execution_stack.back();
+				TRY(generator.stepIterator(frame.iterator_name));
+				bool ended = true;
+				if (frame.is_loop) {
+					TRY_ASSIGN(ended, generator.iteratorEnded(frame.iterator_name));
+				}
+				if (ended) {
+					emit = frame.parent_emit;
+					execution_stack.pop_back();
+				}
+				else {
+					pos = frame.begin_pos;
+				}
+			}
+			else {
+				TRY(generator.processExpression(expr, out));
+			}
 			break;
 		}
 		case ParserState::Done:
@@ -296,16 +345,26 @@ public:
 			out << m_wgslSource;
 		}
 		else if (expr == "workgroupSize") {
-			// TODO: specify on a per-entrypoint basis
-			EntryPointReflection* entryPoint = m_layout->getEntryPointByIndex(0);
+			EntryPointReflection* entryPoint = m_layout->getEntryPointByIndex(m_currentEntryPoint);
 			std::array<SlangUInt, 3> size;
 			entryPoint->getComputeThreadGroupSize(3, size.data());
 			out << "{ " << size[0] << ", " << size[1] << ", " << size[2] << " }";
 		}
 		else if (expr == "entryPoint") {
-			// TODO: specify on a per-entrypoint basis
-			EntryPointReflection* entryPoint = m_layout->getEntryPointByIndex(0);
+			EntryPointReflection* entryPoint = m_layout->getEntryPointByIndex(m_currentEntryPoint);
 			out << entryPoint->getName();
+		}
+		else if (expr == "EntryPoint") {
+			std::string entryPointName = m_layout->getEntryPointByIndex(m_currentEntryPoint)->getName();
+			TRY_ASSERT(entryPointName.size() > 0, "An entry point's name should not be empty");
+			entryPointName[0] = (char)std::toupper((int)entryPointName[0]);
+			out << entryPointName;
+		}
+		else if (expr == "entryPointCount") {
+			out << m_layout->getEntryPointCount();
+		}
+		else if (expr == "entryPointIndex") {
+			out << m_currentEntryPoint;
 		}
 		else if (expr == "bindGroupMembers") {
 			TRY(visitBindings([&](unsigned i, VariableLayoutReflection* parameter, const BindingInfo& info) {
@@ -359,6 +418,51 @@ public:
 		}
 		return {};
 	};
+
+	Result<Void,Error> resetIterator(const std::string& iterator_name) {
+		if (iterator_name == "entryPoints") {
+			m_currentEntryPoint = 0;
+		}
+		else if (iterator_name == "entryPointCount == 1") {
+			// Nothing to reset in theory, because this is in effect a "if"
+			// that executes the bloc only when there is a single entry point
+			// in the kernel. Nonetheless, we reset the entry point index
+			// so that we may use {{entryPoint}} and other expressions that
+			// rely on the current entry point index.
+			m_currentEntryPoint = 0;
+		}
+		else {
+			return Error{ "Invalid iterator name: " + iterator_name };
+		}
+		return {};
+	}
+
+	Result<Void, Error> stepIterator(const std::string& iterator_name) {
+		if (iterator_name == "entryPoints") {
+			m_currentEntryPoint += 1;
+		}
+		else if (iterator_name == "entryPointCount == 1") {
+			// Nothing to step, this is in effect a "if".
+		}
+		else {
+			return Error{ "Invalid iterator name: " + iterator_name };
+		}
+		return {};
+	}
+
+	Result<bool, Error> iteratorEnded(const std::string& iterator_name) const {
+		if (iterator_name == "entryPoints") {
+			size_t entryPointCount = size_t(m_layout->getEntryPointCount());
+			return m_currentEntryPoint >= entryPointCount;
+		}
+		else if (iterator_name == "entryPointCount == 1") {
+			size_t entryPointCount = size_t(m_layout->getEntryPointCount());
+			return entryPointCount == 1;
+		}
+		else {
+			return Error{ "Invalid iterator name: " + iterator_name };
+		}
+	}
 
 private:
 	/**
@@ -422,6 +526,9 @@ private:
 	const std::string m_name;
 	slang::ProgramLayout* m_layout;
 	const std::string m_wgslSource;
+
+	// Iterators
+	size_t m_currentEntryPoint;
 };
 
 Result<Void, Error> generateCppBinding(

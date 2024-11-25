@@ -7,6 +7,8 @@
 // are automatically called
 #include <webgpu/webgpu-raii.hpp>
 
+#include <array>
+
 namespace generated {
 
 /**
@@ -25,12 +27,52 @@ public:
 		{{bindGroupMembers}}
 	) const;
 
+	{{foreach entryPoints}}
+	/**
+	 * Dispatch the kernel's entry point '{{entryPoint}}' on a given number of
+	 * threads or workgroups. The bind group MUST have been created by this
+	 * Kernel's createBindGroup method.
+	 *
+	 * This overload creates its own command encoder, compute pass, and submit
+	 * all resulting commands to the device's queue.
+	 */
+	void dispatch{{EntryPoint}}(
+		DispatchSize dispatchSize,
+		wgpu::BindGroup bindGroup
+	);
+
+	/**
+	 * Variant of dispatch{{EntryPoint}}() that uses an already existing command encoder.
+	 * NB: This does not finish and submit the encoder.
+	 */
+	void dispatch{{EntryPoint}}(
+		wgpu::CommandEncoder encoder,
+		DispatchSize dispatchSize,
+		wgpu::BindGroup bindGroup
+	);
+
+	/**
+	 * Variant of dispatch{{EntryPoint}}() that uses an already existing compute pass.
+	 * NB: This does not end the pass.
+	 */
+	void dispatch{{EntryPoint}}(
+		wgpu::ComputePassEncoder computePass,
+		DispatchSize dispatchSize,
+		wgpu::BindGroup bindGroup
+	);
+	{{end}}
+
+	{{if entryPointCount == 1}}
 	/**
 	 * Dispatch the kernel on a given number of threads or workgroups.
 	 * The bind group MUST have been created by this Kernel's createBindGroup
 	 * method.
+	 *
 	 * This overload creates its own command encoder, compute pass, and submit
 	 * all resulting commands to the device's queue.
+	 *
+	 * NB: This function is only available if there is a single entry point in
+	 * the kernel.
 	 */
 	void dispatch(
 		DispatchSize dispatchSize,
@@ -56,6 +98,7 @@ public:
 		DispatchSize dispatchSize,
 		wgpu::BindGroup bindGroup
 	);
+	{{end}}
 
 	/**
 	 * In case of trouble loading shader, the kernel might be invalid.
@@ -64,13 +107,17 @@ public:
 
 private:
 	static constexpr const char* s_name = "{{kernelLabel}}";
-	static constexpr ThreadCount s_workgroupSize = {{workgroupSize}};
+	static constexpr std::array<ThreadCount,{{entryPointCount}}> s_workgroupSize = {
+	{{foreach entryPoints}}
+		ThreadCount{{workgroupSize}},
+	{{end}}
+	};
 	static const char* s_wgslSource;
 
 	wgpu::Device m_device;
 	bool m_valid = false;
-	std::vector<wgpu::raii::BindGroupLayout> m_bindGroupLayouts;
-	wgpu::raii::ComputePipeline m_pipeline;
+	std::array<wgpu::raii::BindGroupLayout,1> m_bindGroupLayouts;
+	std::array<wgpu::raii::ComputePipeline,{{entryPointCount}}> m_pipelines;
 };
 
 } // namespace generated
@@ -82,10 +129,14 @@ private:
 #include <slang-webgpu/common/variant-utils.h>
 
 #include <variant>
+#include <string>
 
 using namespace wgpu;
 
 namespace generated {
+
+////////////////////////////////////////////
+// Initialization
 
 {{kernelName}}Kernel::{{kernelName}}Kernel(Device device)
 	: m_device(device)
@@ -108,24 +159,30 @@ namespace generated {
 	BindGroupLayoutDescriptor bindGroupLayoutDesc = Default;
 	bindGroupLayoutDesc.entryCount = layoutEntries.size();
 	bindGroupLayoutDesc.entries = layoutEntries.data();
-	bindGroupLayouts[0] = m_device.createBindGroupLayout(bindGroupLayoutDesc);
+	m_bindGroupLayouts[0] = m_device.createBindGroupLayout(bindGroupLayoutDesc);
 
 	PipelineLayoutDescriptor layoutDesc = Default;
-	layoutDesc.bindGroupLayoutCount = bindGroupLayouts.size();
-	layoutDesc.bindGroupLayouts = (WGPUBindGroupLayout*)bindGroupLayouts.data();
+	layoutDesc.bindGroupLayoutCount = m_bindGroupLayouts.size();
+	layoutDesc.bindGroupLayouts = (WGPUBindGroupLayout*)m_bindGroupLayouts.data();
 	raii::PipelineLayout layout = m_device.createPipelineLayout(layoutDesc);
 
-	// 3. Create compute pipeline
-	ComputePipelineDescriptor pipelineDesc = Default;
-	pipelineDesc.label = StringView(s_name);
-	pipelineDesc.compute.module = *shaderModule;
-	pipelineDesc.compute.entryPoint = StringView("{{entryPoint}}");
-	pipelineDesc.layout = *layout;
-	raii::ComputePipeline pipeline = m_device.createComputePipeline(pipelineDesc);
-
-	m_pipeline = pipeline;
-	m_bindGroupLayouts = bindGroupLayouts;
+	// 3. Create compute pipelines
+	{{foreach entryPoints}}
+	// 3.{{entryPointIndex}}. Entry point '{{entryPoint}}'
+	{
+		std::string label = std::string(s_name) + "::{{entryPoint}}";
+		ComputePipelineDescriptor pipelineDesc = Default;
+		pipelineDesc.label = StringView(label);
+		pipelineDesc.compute.module = *shaderModule;
+		pipelineDesc.compute.entryPoint = StringView("{{entryPoint}}");
+		pipelineDesc.layout = *layout;
+		m_pipelines[{{entryPointIndex}}] = m_device.createComputePipeline(pipelineDesc);
+	}
+	{{end}}
 }
+
+////////////////////////////////////////////
+// Bind Group
 
 BindGroup {{kernelName}}Kernel::createBindGroup(
 	{{bindGroupMembersImpl}}
@@ -142,7 +199,11 @@ BindGroup {{kernelName}}Kernel::createBindGroup(
 	return m_device.createBindGroup(bindGroupDesc);
 }
 
-void {{kernelName}}Kernel::dispatch(
+{{foreach entryPoints}}
+////////////////////////////////////////////
+// Entry point '{{entryPoint}}'
+
+void {{kernelName}}Kernel::dispatch{{EntryPoint}}(
 	DispatchSize dispatchSize,
 	BindGroup bindGroup
 ) {
@@ -150,13 +211,13 @@ void {{kernelName}}Kernel::dispatch(
 	encoderDesc.label = StringView(s_name);
 
 	raii::CommandEncoder encoder = m_device.createCommandEncoder(encoderDesc);
-	dispatch(*encoder, dispatchSize, bindGroup);
+	dispatch{{EntryPoint}}(*encoder, dispatchSize, bindGroup);
 	raii::CommandBuffer commands = encoder->finish();
 	raii::Queue queue = m_device.getQueue();
 	queue->submit(*commands);
 }
 
-void {{kernelName}}Kernel::dispatch(
+void {{kernelName}}Kernel::dispatch{{EntryPoint}}(
 	CommandEncoder encoder,
 	DispatchSize dispatchSize,
 	BindGroup bindGroup
@@ -165,24 +226,57 @@ void {{kernelName}}Kernel::dispatch(
 	computePassDesc.label = StringView(s_name);
 
 	raii::ComputePassEncoder computePass = encoder.beginComputePass(computePassDesc);
-	dispatch(*computePass, dispatchSize, bindGroup);
+	dispatch{{EntryPoint}}(*computePass, dispatchSize, bindGroup);
 	computePass->end();
 }
 
-void {{kernelName}}Kernel::dispatch(ComputePassEncoder computePass, DispatchSize dispatchSize, BindGroup bindGroup) {
+void {{kernelName}}Kernel::dispatch{{EntryPoint}}(
+	ComputePassEncoder computePass,
+	DispatchSize dispatchSize,
+	BindGroup bindGroup
+) {
 	WorkgroupCount workgroupCount = std::visit(overloaded{
 		[](WorkgroupCount count) { return count; },
 		[](ThreadCount threadCount) { return WorkgroupCount{
-			divideAndCeil(threadCount.x, s_workgroupSize.x),
-			divideAndCeil(threadCount.y, s_workgroupSize.y),
-			divideAndCeil(threadCount.z, s_workgroupSize.z)
+			divideAndCeil(threadCount.x, s_workgroupSize[{{entryPointIndex}}].x),
+			divideAndCeil(threadCount.y, s_workgroupSize[{{entryPointIndex}}].y),
+			divideAndCeil(threadCount.z, s_workgroupSize[{{entryPointIndex}}].z)
 		}; }
 	}, dispatchSize);
 
-	computePass.setPipeline(*m_pipeline);
+	computePass.setPipeline(*m_pipelines[{{entryPointIndex}}]);
 	computePass.setBindGroup(0, bindGroup, 0, nullptr);
 	computePass.dispatchWorkgroups(workgroupCount.x, workgroupCount.y, workgroupCount.z);
 }
+{{end}}
+
+{{if entryPointCount == 1}}
+////////////////////////////////////////////
+// Commodity aliases enabled when there is a single entry point in the kernel
+
+void {{kernelName}}Kernel::dispatch(
+	DispatchSize dispatchSize,
+	BindGroup bindGroup
+) {
+	dispatch{{EntryPoint}}(dispatchSize, bindGroup);
+}
+
+void {{kernelName}}Kernel::dispatch(
+	CommandEncoder encoder,
+	DispatchSize dispatchSize,
+	BindGroup bindGroup
+) {
+	dispatch{{EntryPoint}}(encoder, dispatchSize, bindGroup);
+}
+
+void {{kernelName}}Kernel::dispatch(
+	ComputePassEncoder computePass,
+	DispatchSize dispatchSize,
+	BindGroup bindGroup
+) {
+	dispatch{{EntryPoint}}(computePass, dispatchSize, bindGroup);
+}
+{{end}}
 
 const char* {{kernelName}}Kernel::s_wgslSource = R"({{wgslSource}})";
 

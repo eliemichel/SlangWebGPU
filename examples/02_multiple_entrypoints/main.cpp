@@ -94,32 +94,69 @@ Result<Void, Error> run() {
 	// as first argument, otherwise if nothing is provided it creates its own
 	// encoder and submits it. Here we create an encoder so that we directly issue
 	// the buffer copy in the same command buffer.
-	raii::CommandEncoder encoder = device->createCommandEncoder();
-	kernel.dispatchComputeMainSub(*encoder, ThreadCount{ 10 }, *bindGroup);
-	encoder->copyBufferToBuffer(*result, 0, *mapBuffer, 0, result->getSize());
-	raii::CommandBuffer commands = encoder->finish();
-	queue->submit(*commands);
+	{
+		raii::CommandEncoder encoder = device->createCommandEncoder();
+		kernel.dispatchComputeMainSub(*encoder, ThreadCount{ 10 }, *bindGroup);
+		encoder->copyBufferToBuffer(*result, 0, *mapBuffer, 0, result->getSize());
+		raii::CommandBuffer commands = encoder->finish();
+		queue->submit(*commands);
+	}
 
 	// 7. Read back result
 	// Nothing specific to Slang here
-	bool done = false;
-	std::vector<float> resultData(10);
-	auto h = mapBuffer->mapAsync(MapMode::Read, 0, mapBuffer->getSize(), [&](BufferMapAsyncStatus status) {
-		done = true;
-		if (status == BufferMapAsyncStatus::Success) {
-			memcpy(resultData.data(), mapBuffer->getConstMappedRange(0, mapBuffer->getSize()), mapBuffer->getSize());
-		}
-		mapBuffer->unmap();
-	});
+	{
+		bool done = false;
+		std::vector<float> resultData(10);
+		auto h = mapBuffer->mapAsync(MapMode::Read, 0, mapBuffer->getSize(), [&](BufferMapAsyncStatus status) {
+			done = true;
+			if (status == BufferMapAsyncStatus::Success) {
+				memcpy(resultData.data(), mapBuffer->getConstMappedRange(0, mapBuffer->getSize()), mapBuffer->getSize());
+			}
+			mapBuffer->unmap();
+		});
 
-	while (!done) {
-		pollDeviceEvents(*device);
+		while (!done) {
+			pollDeviceEvents(*device);
+		}
+
+		LOG(INFO) << "Result data (subtraction):";
+		for (int i = 0; i < 10; ++i) {
+			LOG(INFO) << data0[i] << " - " << data1[i] << " = " << resultData[i];
+			TRY_ASSERT(isClose(data0[i] - data1[i], resultData[i]), "Shader did not run correctly!");
+		}
 	}
 
-	LOG(INFO) << "Result data:";
-	for (int i = 0; i < 10; ++i) {
-		LOG(INFO) << data0[i] << " - " << data1[i] << " = " << resultData[i];
-		TRY_ASSERT(isClose(data0[i] - data1[i], resultData[i]), "Shader did not run correctly!");
+	// 8. Dispatch another entry point of the same kernel
+	{
+		raii::CommandEncoder encoder = device->createCommandEncoder();
+		kernel.dispatchComputeMainMultiply(*encoder, ThreadCount{ 10 }, *bindGroup);
+		encoder->copyBufferToBuffer(*result, 0, *mapBuffer, 0, result->getSize());
+		raii::CommandBuffer commands = encoder->finish();
+		queue->submit(*commands);
+	}
+
+	// 7. Read back result
+	// Nothing specific to Slang here
+	{
+		bool done = false;
+		std::vector<float> resultData(10);
+		auto h = mapBuffer->mapAsync(MapMode::Read, 0, mapBuffer->getSize(), [&](BufferMapAsyncStatus status) {
+			done = true;
+			if (status == BufferMapAsyncStatus::Success) {
+				memcpy(resultData.data(), mapBuffer->getConstMappedRange(0, mapBuffer->getSize()), mapBuffer->getSize());
+			}
+			mapBuffer->unmap();
+		});
+
+		while (!done) {
+			pollDeviceEvents(*device);
+		}
+
+		LOG(INFO) << "Result data (multiplication):";
+		for (int i = 0; i < 10; ++i) {
+			LOG(INFO) << data0[i] << " * " << data1[i] << " = " << resultData[i];
+			TRY_ASSERT(isClose(data0[i] * data1[i], resultData[i]), "Shader did not run correctly!");
+		}
 	}
 
 	return {};
