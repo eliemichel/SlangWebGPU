@@ -73,7 +73,7 @@ struct Kernel {
 
 9. Generalize to cases where we want to expose **multiple entry points** from the same shader, hence implementing multiple `dispatch` methods.
 
-10. TODO: Handle slang shader file inclusion. TODO: autodiff. TODO: custom entry point name
+10. Progressively complexify the generator to handle slang shader file inclusion (through a Depfile). TODO: autodiff. TODO: custom entry point name
 
 Internal notes
 --------------
@@ -82,3 +82,5 @@ Internal notes
 # Memo to look for TODOs:
 grep -R TODO --exclude-dir=build* --exclude-dir=third_party
 ```
+
+TODO: why does the generator crash?

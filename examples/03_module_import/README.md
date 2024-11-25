@@ -1,7 +1,7 @@
 module_import
 =============
 
-This demo shows how that the source Slang file provided to `add_slang_webgpu_kernel` can include/import other source files, which are correctly added to the compilation dependency graph. It is even possible to specfify extra include directories: (TODO)
+This demo shows how that the source Slang file provided to `add_slang_webgpu_kernel` can include/import other source files, which are correctly added to the compilation dependency graph. It is even possible to specfify extra include directories:
 
 ```CMake
 add_slang_webgpu_kernel(

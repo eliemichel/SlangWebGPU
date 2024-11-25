@@ -392,6 +392,13 @@ public:
 		else if (expr == "entryPointIndex") {
 			out << m_currentEntryPoint;
 		}
+		else if (expr == "bindGroupEntryCount") {
+			size_t count = 0;
+			TRY(visitBindings([&count](unsigned, VariableLayoutReflection*, const BindingInfo&) {
+				count += 1;
+			}));
+			out << count;
+		}
 		else if (expr == "bindGroupMembers") {
 			TRY(visitBindings([&](unsigned i, VariableLayoutReflection* parameter, const BindingInfo& info) {
 				if (i > 0) out << ",\n\t\t";

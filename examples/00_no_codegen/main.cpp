@@ -194,7 +194,7 @@ Result<Kernel, Error> createKernel(
 	layoutDesc.bindGroupLayouts = (WGPUBindGroupLayout*)bindGroupLayouts.data();
 	raii::PipelineLayout layout = device.createPipelineLayout(layoutDesc);
 
-	// 4. Create compute pipeline (TODO)
+	// 4. Create compute pipeline
 	ComputePipelineDescriptor pipelineDesc = Default;
 	pipelineDesc.label = StringView(kernel.name);
 	pipelineDesc.compute.module = *shaderModule;

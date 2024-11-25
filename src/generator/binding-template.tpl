@@ -151,7 +151,7 @@ namespace generated {
 	m_valid = shaderModule;
 
 	// 2. Create pipeline layout (automatically generated)
-	std::vector<BindGroupLayoutEntry> layoutEntries(3, Default);
+	std::vector<BindGroupLayoutEntry> layoutEntries({{bindGroupEntryCount}}, Default);
 	{{bindGroupLayoutEntries}}
 
 	// TODO: handle more than 1 bind group
@@ -187,7 +187,7 @@ namespace generated {
 BindGroup {{kernelName}}Kernel::createBindGroup(
 	{{bindGroupMembersImpl}}
 ) const {
-	std::vector<BindGroupEntry> entries(3, Default);
+	std::vector<BindGroupEntry> entries({{bindGroupEntryCount}}, Default);
 	{{bindGroupEntries}}
 
 	BindGroupDescriptor bindGroupDesc = Default;

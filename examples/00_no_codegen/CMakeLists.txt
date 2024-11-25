@@ -16,15 +16,17 @@ target_link_libraries(slang_webgpu_example_00_no_codegen
 
 # Create a slang shader target to trigger compilation from slang to WGSL
 add_slang_shader(
-	add_buffers
+	transpile_add_buffers
 	SOURCE shaders/add-buffers.slang
 	ENTRY computeMain
 )
 
 # Make sure the shader compilation is called whenever we need to build this
-# example
-target_link_slang_shaders(slang_webgpu_example_00_no_codegen
-	add_buffers
+# example. This uses 'add_dependencies' rather than 'target_link_libraries'
+# because there is nothing to link in the transpilation target.
+add_dependencies(
+	slang_webgpu_example_00_no_codegen
+	transpile_add_buffers
 )
 
 # Let our source code know where to find the generated WGSL shader through

@@ -1,5 +1,5 @@
 
 bool checkThreadId(uint threadId) {
-    // TODO: compare with target job count
+    // A dummy test
     return threadId >= 0;
 }

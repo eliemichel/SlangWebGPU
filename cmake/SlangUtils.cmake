@@ -30,7 +30,7 @@
 #############################################
 # Define a shader target, which is a custom target responsible for transpiling
 # a slang shader into a WGSL shader.
-# This target may then be used with target_link_slang_shaders.
+# This target may then be used with 'add_dependencies'.
 #
 # NB: This function only requires SLANGC to be set to the Slang compiler; it
 # does not rely on any other mechanism specific to this repository so you may
@@ -108,25 +108,9 @@ function(add_slang_shader TargetName)
 
 	set_target_properties(${TargetName}
 		PROPERTIES
-		FOLDER "SlangWebGPU/shaders"
+		FOLDER "SlangWebGPU/shader-compilation"
 	)
 endfunction(add_slang_shader)
-
-
-#############################################
-# Add a dependency link from a target to a shader target it relies on.
-# The shader target must have been declared using add_slang_shader.
-#
-# Example:
-#   target_link_slang_shaders(slang_webgpu_example
-#     hello_world
-#   )
-function(target_link_slang_shaders TargetName)
-	add_dependencies(
-		${TargetName}
-		${ARGN}
-	)
-endfunction(target_link_slang_shaders)
 
 
 #############################################
