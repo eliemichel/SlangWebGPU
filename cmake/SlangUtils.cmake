@@ -47,7 +47,6 @@ function(add_slang_shader TargetName)
 	set(oneValueArgs SOURCE ENTRY)
 	set(multiValueArgs)
 	cmake_parse_arguments(arg "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
-	# TODO: Handle multiple entry points (generate one compute pipeline for each)
 
 	if (NOT SLANGC)
 		message(FATAL_ERROR "Could not find Slang executable. Provide the SLANGC cache variable or use FindSlang.cmake.")
@@ -150,6 +149,15 @@ function(add_slang_webgpu_kernel TargetName)
 	set(KERNEL_HEADER "${CMAKE_CURRENT_BINARY_DIR}/generated/${arg_NAME}Kernel.h")
 	set(KERNEL_IMPLEM "${CMAKE_CURRENT_BINARY_DIR}/generated/${arg_NAME}Kernel.cpp")
 
+	set(ENTRYPOINTS)
+	foreach(EP ${arg_ENTRY})
+		if (NOT ENTRYPOINTS)
+			set(ENTRYPOINTS "${EP}")
+		else()
+			set(ENTRYPOINTS "${ENTRYPOINTS},${EP}")
+		endif()
+	endforeach()
+
 	# Command that give the recipe to transpile slang into WGSL
 	# i.e., internal behavior of the target ${TargetName} defined above
 	add_custom_command(
@@ -166,7 +174,7 @@ entry point '${arg_ENTRY}'..."
 			--name ${arg_NAME}
 			--input-slang ${SLANG_SHADER}
 			--input-template ${TEMPLATE}
-			--entrypoints ${arg_ENTRY}
+			--entrypoints ${ENTRYPOINTS}
 			--output-hpp ${KERNEL_HEADER}
 			--output-cpp ${KERNEL_IMPLEM}
 			--include-directories ${SLANG_SHADER_DIR}

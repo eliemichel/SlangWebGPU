@@ -140,7 +140,10 @@ Result<Slang::ComPtr<IComponentType>, Error> loadSlangModule(
 	for (const std::string& entryPointName : entryPoints) {
 		LOG(INFO) << "- Adding entry point '" << entryPointName << "'...";
 		Slang::ComPtr<IEntryPoint> entryPoint;
-		TRY_SLANG(module->findEntryPointByName(entryPointName.c_str(), entryPoint.writeRef()));
+		SlangResult res = module->findEntryPointByName(entryPointName.c_str(), entryPoint.writeRef());
+		if (SLANG_FAILED(res)) {
+			return Error{ "Entrypoint '" + entryPointName + "' not found in shader '" + inputSlang.string() + "'."};
+		}
 
 		components.push_back(entryPoint);
 	}

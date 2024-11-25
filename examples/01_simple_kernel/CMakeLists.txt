@@ -1,8 +1,8 @@
 
-add_executable(slang_webgpu_example)
-set_example_target_properties(slang_webgpu_example)
+add_executable(slang_webgpu_example_simple_kernel)
+set_example_target_properties(slang_webgpu_example_simple_kernel)
 
-target_sources(slang_webgpu_example
+target_sources(slang_webgpu_example_simple_kernel
 	PRIVATE
 	main.cpp
 )
@@ -14,7 +14,7 @@ add_slang_webgpu_kernel(
 	ENTRY computeMain
 )
 
-target_link_libraries(slang_webgpu_example
+target_link_libraries(slang_webgpu_example_simple_kernel
 	PRIVATE
 	webgpu
 	slang_webgpu_common

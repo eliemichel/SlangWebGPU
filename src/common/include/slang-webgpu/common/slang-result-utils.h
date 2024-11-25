@@ -12,7 +12,7 @@
 #define TRY_SLANG(statement) \
 	{ \
 		SlangResult res = (statement); \
-		if (res != SLANG_OK) { \
+		if (SLANG_FAILED(res)) { \
 			return Error{ "Slang Error, status = " + std::to_string(res) }; \
 		} \
 	}

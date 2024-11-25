@@ -1,3 +1,4 @@
 add_subdirectory(common)
-add_subdirectory(no_codegen)
-add_subdirectory(basic_example)
+add_subdirectory(00_no_codegen)
+add_subdirectory(01_simple_kernel)
+add_subdirectory(02_multiple_entrypoints)
