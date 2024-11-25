@@ -11,6 +11,7 @@ target_link_libraries(slang_webgpu_example_no_codegen
 	PRIVATE
 	webgpu
 	slang_webgpu_common
+	slang_webgpu_example_common
 )
 
 # Create a slang shader target to trigger compilation from slang to WGSL

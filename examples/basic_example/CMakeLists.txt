@@ -11,6 +11,7 @@ target_link_libraries(slang_webgpu_example
 	PRIVATE
 	webgpu
 	slang_webgpu_common
+	slang_webgpu_example_common
 )
 
 add_slang_shader(

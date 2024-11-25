@@ -257,6 +257,8 @@ Result<std::string, Error> generateFromTemplate(
 			pos = expr_end_pos + 2;
 			break;
 		}
+		case ParserState::Done:
+			break;
 		}
 	}
 
@@ -376,7 +378,7 @@ private:
 			VariableLayoutReflection* parameter = m_layout->getParameterByIndex(i);
 			ParameterCategory category = parameter->getCategory();
 			TRY_ASSERT(
-				category == SLANG_PARAMETER_CATEGORY_DESCRIPTOR_TABLE_SLOT,
+				category == ParameterCategory::DescriptorTableSlot,
 				"Other categories than 'descriptor table slot' are not supported, but found category '" << enum_name(category) << "'"
 			);
 			TRY_ASSERT(

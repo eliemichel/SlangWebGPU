@@ -55,7 +55,8 @@ function(add_slang_shader TargetName)
 	# The generated WGSL file
 	cmake_path(GET arg_SOURCE PARENT_PATH parent)
 	cmake_path(GET arg_SOURCE STEM LAST_ONLY stem)
-	set(WGSL_SHADER "${CMAKE_CURRENT_BINARY_DIR}/${parent}/${stem}.wgsl")
+	set(WGSL_SHADER_DIR "${CMAKE_CURRENT_BINARY_DIR}/${parent}")
+	set(WGSL_SHADER "${WGSL_SHADER_DIR}/${stem}.wgsl")
 
 	# Target that represents the generated WGSL file in the dependency graph.
 	add_custom_target(${TargetName}
@@ -70,6 +71,8 @@ function(add_slang_shader TargetName)
 			"Transpiling shader '${SLANG_SHADER}' into '${WGSL_SHADER}' with entry point '${arg_ENTRY}'..."
 		OUTPUT
 			${WGSL_SHADER}
+		COMMAND
+			${CMAKE_COMMAND} -E make_directory ${WGSL_SHADER_DIR}
 		COMMAND
 			${SLANGC}
 			${SLANG_SHADER}
@@ -148,9 +151,9 @@ function(add_slang_webgpu_kernel TargetName)
 	# i.e., internal behavior of the target ${TargetName} defined above
 	add_custom_command(
 		COMMENT
-			"Generating Slang-WebGPU binding '${arg_NAME}Kernel' for shader \
-			'${SLANG_SHADER}' into '${WGSL_SHADER}' and '${KERNEL_HEADER}' with \
-			entry point '${arg_ENTRY}'..."
+"Generating Slang-WebGPU binding '${arg_NAME}Kernel' for shader \
+'${SLANG_SHADER}' into '${WGSL_SHADER}' and '${KERNEL_HEADER}' with \
+entry point '${arg_ENTRY}'..."
 		OUTPUT
 			${WGSL_SHADER}
 			${KERNEL_HEADER}
@@ -170,7 +173,6 @@ function(add_slang_webgpu_kernel TargetName)
 		DEPENDS
 			${GENERATOR}
 			${TEMPLATE}
-		CODEGEN
 		# TODO: Add implicit dependencies by tracking includes
 	)
 

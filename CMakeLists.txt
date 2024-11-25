@@ -1,9 +1,12 @@
-cmake_minimum_required(VERSION 3.24...3.30 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.16...3.30 FATAL_ERROR)
 project(
 	SlangWebGPU
 	VERSION 1.0.0
 	LANGUAGES CXX C
 )
+
+# To add some missing features for older versions of cmake
+include(cmake/CMakePolyfill.cmake)
 
 #############################################
 # Options

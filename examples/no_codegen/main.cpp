@@ -6,11 +6,14 @@
 #include <slang-webgpu/common/logger.h>
 #include <slang-webgpu/common/io.h>
 
+#include <slang-webgpu/examples/webgpu-utils.h> // provides createDevice()
+
 // NB: raii::Foo is the equivalent of Foo except its release()/addRef() methods
 // are automatically called
 #include <webgpu/webgpu-raii.hpp>
 
 #include <filesystem>
+#include <cstring> // for memcpy
 
 using namespace wgpu;
 
@@ -27,11 +30,6 @@ struct Kernel {
  * Main entry point
  */
 Result<Void, Error> run();
-
-/**
- * Create a WebGPU device.
- */
-Device createDevice();
 
 /**
  * Load kernel from a WGSL file
@@ -63,12 +61,17 @@ int main(int, char**) {
 	return 0;
 }
 
+static bool isClose(float a, float b, float eps = 1e-6) {
+	return std::abs(b - a) < eps;
+}
+
 Result<Void, Error> run() {
 	// 1. Create GPU device
 	raii::Device device = createDevice();
 	raii::Queue queue = device->getQueue();
 
 	// 2. Load kernel
+	// When not using automated code generation, we manually write this 'createKernel' function
 	Kernel kernel;
 	TRY_ASSIGN(kernel, createKernel(*device, "Add buffers", SHADER_DIR "add-buffers.wgsl"));
 
@@ -102,6 +105,7 @@ Result<Void, Error> run() {
 	queue->writeBuffer(*buffer1, 0, data1.data(), bufferDesc.size);
 
 	// 5. Build bind group
+	// When not using automated code generation, we manually write this 'createKernelBindGroup' function
 	raii::BindGroup bindGroup = createKernelBindGroup(*device, kernel, *buffer0, *buffer1, *result);
 
 	// 6. Dispatch kernel
@@ -136,52 +140,10 @@ Result<Void, Error> run() {
 	LOG(INFO) << "Result data:";
 	for (int i = 0; i < 10; ++i) {
 		LOG(INFO) << data0[i] << " + " << data1[i] << " = " << resultData[i];
+		TRY_ASSERT(isClose(data0[i] + data1[i], resultData[i]), "Shader did not run correctly!");
 	}
 
 	return {};
-}
-
-Device createDevice() {
-	raii::Instance instance = createInstance();
-
-	RequestAdapterOptions options = Default;
-	raii::Adapter adapter = instance->requestAdapter(options);
-
-	DeviceDescriptor descriptor = Default;
-	descriptor.uncapturedErrorCallbackInfo2.callback = [](
-		[[maybe_unused]] WGPUDevice const* device,
-		WGPUErrorType type,
-		WGPUStringView message,
-		[[maybe_unused]] void* userdata1,
-		[[maybe_unused]] void* userdata2
-	) {
-		if (message.data)
-			LOG(ERROR) << "[WebGPU] Uncaptured error: " << StringView(message) << " (type: " << type << ")";
-		else
-			LOG(ERROR) << "[WebGPU] Uncaptured error: (reason: " << type << ")";
-	};
-	descriptor.deviceLostCallbackInfo2.callback = [](
-		[[maybe_unused]] WGPUDevice const* device,
-		WGPUDeviceLostReason reason,
-		WGPUStringView message,
-		[[maybe_unused]] void* userdata1,
-		[[maybe_unused]] void* userdata2
-	) {
-		if (reason == DeviceLostReason::InstanceDropped) return;
-		if (message.data)
-			LOG(ERROR) << "[WebGPU] Device lost: " << StringView(message) << " (reason: " << reason << ")";
-		else
-			LOG(ERROR) << "[WebGPU] Device lost: (reason: " << reason << ")";
-	};
-	Device device = adapter->requestDevice(descriptor);
-
-	AdapterInfo info;
-	device.getAdapterInfo(&info);
-	LOG(INFO)
-		<< "Using device: " << StringView(info.device)
-		<< " (vendor: " << StringView(info.vendor)
-		<< ", architecture: " << StringView(info.architecture) << ")";
-	return device;
 }
 
 Result<Kernel, Error> createKernel(

@@ -91,13 +91,31 @@ set(Slang_ROOT "${${FC_NAME}_SOURCE_DIR}")
 
 add_library(slang SHARED IMPORTED GLOBAL)
 
-# TODO: This is Windows only!!!
-set_target_properties(
-	slang
-	PROPERTIES
-		IMPORTED_IMPLIB "${Slang_ROOT}/lib/slang.lib"
-		IMPORTED_LOCATION "${Slang_ROOT}/bin/slang.dll"
-)
+if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
+	if (MSVC)
+		set_target_properties(
+			slang
+			PROPERTIES
+				IMPORTED_IMPLIB "${Slang_ROOT}/lib/slang.lib"
+				IMPORTED_LOCATION "${Slang_ROOT}/bin/slang.dll"
+		)
+	else()
+		message(FATAL_ERROR "Sorry, Slang does not provide precompiled binaries for MSYS/MinGW")
+	endif()
+elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+	set_target_properties(
+		slang
+		PROPERTIES
+			IMPORTED_LOCATION "${Slang_ROOT}/lib/libslang.so"
+			IMPORTED_NO_SONAME TRUE
+	)
+elseif (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+	set_target_properties(
+		slang
+		PROPERTIES
+			IMPORTED_LOCATION "${Slang_ROOT}/lib/libslang.dylib"
+	)
+endif()
 
 target_include_directories(slang INTERFACE
 	"${Slang_ROOT}/include"
@@ -106,8 +124,12 @@ target_include_directories(slang INTERFACE
 #############################################
 # Set output variables
 
-# TODO: This is Windows only!!!
-SET(SLANGC "${Slang_ROOT}/bin/slangc.exe" CACHE PATH "Path to the slangc executable, set by FetchSlang.cmake")
+if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
+	set(EXE_EXT ".exe")
+else()
+	set(EXE_EXT)
+endif()
+SET(SLANGC "${Slang_ROOT}/bin/slangc${EXE_EXT}" CACHE PATH "Path to the slangc executable, set by FetchSlang.cmake")
 
 #############################################
 # Utility function

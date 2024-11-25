@@ -9,11 +9,14 @@
 #include <slang-webgpu/common/logger.h>
 #include <slang-webgpu/common/io.h>
 
+#include <slang-webgpu/examples/webgpu-utils.h> // provides createDevice()
+
 // NB: raii::Foo is the equivalent of Foo except its release()/addRef() methods
 // are automatically called
 #include <webgpu/webgpu-raii.hpp>
 
 #include <filesystem>
+#include <cstring> // for memcpy
 
 using namespace wgpu;
 
@@ -21,11 +24,6 @@ using namespace wgpu;
  * Main entry point
  */
 Result<Void, Error> run();
-
-/**
- * Create a WebGPU device.
- */
-Device createDevice();
 
 int main(int, char**) {
 	auto maybeError = run();
@@ -36,16 +34,24 @@ int main(int, char**) {
 	return 0;
 }
 
+static bool isClose(float a, float b, float eps = 1e-6) {
+	return std::abs(b - a) < eps;
+}
+
 Result<Void, Error> run() {
 	// 1. Create GPU device
+	// Nothing specific to Slang here
 	raii::Device device = createDevice();
 	raii::Queue queue = device->getQueue();
 
 	// 2. Load kernel
+	// This simply consists in instancing the generated HelloWorldKernel class.
+	// NB: In a real scenario, this may be wrapped into a unique_ptr
 	generated::HelloWorldKernel kernel(*device);
 	TRY_ASSERT(kernel, "Kernel could not load!");
 
 	// 3. Create buffers
+	// Nothing specific to Slang here
 	BufferDescriptor bufferDesc = Default;
 	bufferDesc.size = 10 * sizeof(float);
 	bufferDesc.label = StringView("buffer0");
@@ -65,6 +71,7 @@ Result<Void, Error> run() {
 	raii::Buffer mapBuffer = device->createBuffer(bufferDesc);
 
 	// 4. Fill in input buffers
+	// Nothing specific to Slang here
 	std::vector<float> data0(10);
 	std::vector<float> data1(10);
 	for (int i = 0; i < 10; ++i) {
@@ -75,16 +82,26 @@ Result<Void, Error> run() {
 	queue->writeBuffer(*buffer1, 0, data1.data(), bufferDesc.size);
 
 	// 5. Build bind group
+	// Each generated kernel provides a 'createBindGroup' whose argument number
+	// and names directly reflects the resources declared in the Slang shader.
 	raii::BindGroup bindGroup = kernel.createBindGroup(*buffer0, *buffer1, *result);
 
 	// 6. Dispatch kernel and copy result to map buffer
+	// Each generated kernel provides a 'dispatch' method which can be called
+	// for a specific number of workgroups or threads (the number of workgroup
+	// is then automatically derived from the workgroup size).
+	// NB: The 'dispatch' method may receive an existing encoder or compute pass
+	// as first argument, otherwise if nothing is provided it creates its own
+	// encoder and submits it. Here we create an encoder so that we directly issue
+	// the buffer copy in the same command buffer.
 	raii::CommandEncoder encoder = device->createCommandEncoder();
-	kernel.dispatch(*encoder, WorkgroupCount{ 10 }, *bindGroup);
+	kernel.dispatch(*encoder, ThreadCount{ 10 }, *bindGroup);
 	encoder->copyBufferToBuffer(*result, 0, *mapBuffer, 0, result->getSize());
 	raii::CommandBuffer commands = encoder->finish();
 	queue->submit(*commands);
 
 	// 7. Read back result
+	// Nothing specific to Slang here
 	bool done = false;
 	std::vector<float> resultData(10);
 	auto h = mapBuffer->mapAsync(MapMode::Read, 0, mapBuffer->getSize(), [&](BufferMapAsyncStatus status) {
@@ -102,50 +119,8 @@ Result<Void, Error> run() {
 	LOG(INFO) << "Result data:";
 	for (int i = 0; i < 10; ++i) {
 		LOG(INFO) << data0[i] << " + " << data1[i] << " = " << resultData[i];
+		TRY_ASSERT(isClose(data0[i] + data1[i], resultData[i]), "Shader did not run correctly!");
 	}
 
 	return {};
-}
-
-Device createDevice() {
-	raii::Instance instance = createInstance();
-
-	RequestAdapterOptions options = Default;
-	raii::Adapter adapter = instance->requestAdapter(options);
-
-	DeviceDescriptor descriptor = Default;
-	descriptor.uncapturedErrorCallbackInfo2.callback = [](
-		[[maybe_unused]] WGPUDevice const* device,
-		WGPUErrorType type,
-		WGPUStringView message,
-		[[maybe_unused]] void* userdata1,
-		[[maybe_unused]] void* userdata2
-	) {
-		if (message.data)
-			LOG(ERROR) << "[WebGPU] Uncaptured error: " << StringView(message) << " (type: " << type << ")";
-		else
-			LOG(ERROR) << "[WebGPU] Uncaptured error: (reason: " << type << ")";
-	};
-	descriptor.deviceLostCallbackInfo2.callback = [](
-		[[maybe_unused]] WGPUDevice const* device,
-		WGPUDeviceLostReason reason,
-		WGPUStringView message,
-		[[maybe_unused]] void* userdata1,
-		[[maybe_unused]] void* userdata2
-	) {
-		if (reason == DeviceLostReason::InstanceDropped) return;
-		if (message.data)
-			LOG(ERROR) << "[WebGPU] Device lost: " << StringView(message) << " (reason: " << reason << ")";
-		else
-			LOG(ERROR) << "[WebGPU] Device lost: (reason: " << reason << ")";
-	};
-	Device device = adapter->requestDevice(descriptor);
-
-	AdapterInfo info;
-	device.getAdapterInfo(&info);
-	LOG(INFO)
-		<< "Using device: " << StringView(info.device)
-		<< " (vendor: " << StringView(info.vendor)
-		<< ", architecture: " << StringView(info.architecture) << ")";
-	return device;
 }
