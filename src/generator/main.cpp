@@ -150,9 +150,8 @@ Result<Slang::ComPtr<IComponentType>, Error> loadSlangModule(
 	return program;
 }
 
-Result<Void, Error> compileToWgsl(
+Result<std::string, Error> compileToWgsl(
 	Slang::ComPtr<IComponentType> program,
-	const std::filesystem::path& outputWgsl,
 	const std::filesystem::path& inputSlang // only to give context in error messages
 ) {
 
@@ -182,11 +181,7 @@ Result<Void, Error> compileToWgsl(
 	}
 
 	std::string wgslSource = (const char*)codeBlob->getBufferPointer();
-
-	LOG(INFO) << "Writing generated WGSL source into '" << outputWgsl << "'...";
-	saveTextFile(outputWgsl, wgslSource);
-
-	return {};
+	return wgslSource;
 }
 
 /**
@@ -280,11 +275,11 @@ public:
 	BindingGenerator(
 		const std::string& name,
 		slang::ProgramLayout* layout,
-		const std::filesystem::path& wgsl
+		const std::string& wgslSource
 	)
 		: m_name(name)
 		, m_layout(layout)
-		, m_wgsl(wgsl)
+		, m_wgslSource(wgslSource)
 	{}
 
 	Result<Void, Error> processExpression(const std::string& expr, std::ostringstream& out) {
@@ -294,11 +289,8 @@ public:
 		else if (expr == "kernelLabel") {
 			out << m_name;
 		}
-		else if (expr == "sourcePath") {
-			// TODO: make relative
-			// TODO: Embbed source code?
-			// TODO: Handle case where this path is not provided
-			out << m_wgsl.string();
+		else if (expr == "wgslSource") {
+			out << m_wgslSource;
 		}
 		else if (expr == "workgroupSize") {
 			// TODO: specify on a per-entrypoint basis
@@ -426,7 +418,7 @@ private:
 private:
 	const std::string m_name;
 	slang::ProgramLayout* m_layout;
-	const std::filesystem::path m_wgsl;
+	const std::string m_wgslSource;
 };
 
 Result<Void, Error> generateCppBinding(
@@ -434,45 +426,18 @@ Result<Void, Error> generateCppBinding(
 	const std::string& name,
 	[[maybe_unused]] const std::vector<std::string>& entryPoints,
 	const std::filesystem::path& inputTemplate,
-	const std::filesystem::path& outputWgsl,
+	const std::string& wgslSource,
 	const std::filesystem::path& outputHpp,
 	const std::filesystem::path& outputCpp
 ) {
 	LOG(INFO) << "Getting reflection information...";
 	slang::ProgramLayout* layout = program->getLayout();
-	LOG(INFO) << "layout: " << layout;
-
-	LOG(INFO) << "Global program parameters:";
-	{
-		unsigned parameterCount = layout->getParameterCount();
-		for (unsigned i = 0; i < parameterCount; ++i)
-		{
-			slang::VariableLayoutReflection* parameter = layout->getParameterByIndex(i);
-			LOG(INFO) << "- #" << i << ": " << parameter->getName();
-		}
-	}
-
-	LOG(INFO) << "Program entry points:";
-	SlangUInt entryPointCount = layout->getEntryPointCount();
-	for (SlangUInt i = 0; i < entryPointCount; ++i)
-	{
-		slang::EntryPointReflection* entryPoint = layout->getEntryPointByIndex(i);
-		LOG(INFO) << "- #" << i << ": " << entryPoint->getName();
-		entryPoint->getParameterCount();
-		LOG(INFO) << "  Entry point parameters:";
-		unsigned parameterCount = entryPoint->getParameterCount();
-		for (unsigned j = 0; j < parameterCount; ++j)
-		{
-			slang::VariableLayoutReflection* parameter = entryPoint->getParameterByIndex(j);
-			LOG(INFO) << "  - #" << j << ": " << parameter->getName();
-		}
-	}
-
+	
 	LOG(INFO) << "Loading binding template from " << inputTemplate << "...";
 	std::string tpl;
 	TRY_ASSIGN(tpl, loadTextFile(inputTemplate));
 
-	BindingGenerator generator(name, layout, outputWgsl);
+	BindingGenerator generator(name, layout, wgslSource);
 
 	LOG(INFO) << "Generating binding header into " << outputHpp << "...";
 	std::string hpp;
@@ -500,12 +465,15 @@ Result<Void, Error> run(const Arguments& args) {
 		args.entryPoints
 	));
 
+	std::string wgslSource;
+	TRY_ASSIGN(wgslSource, compileToWgsl(
+		program,
+		args.inputSlang
+	));
+
 	if (!args.outputWgsl.empty()) {
-		TRY(compileToWgsl(
-			program,
-			args.outputWgsl,
-			args.inputSlang
-		));
+		LOG(INFO) << "Writing generated WGSL source into '" << args.outputWgsl << "'...";
+		TRY(saveTextFile(args.outputWgsl, wgslSource));
 	}
 
 	if (!args.outputHpp.empty()) {
@@ -521,7 +489,7 @@ Result<Void, Error> run(const Arguments& args) {
 			args.name,
 			args.entryPoints,
 			args.inputTemplate,
-			args.outputWgsl,
+			wgslSource,
 			args.outputHpp,
 			args.outputCpp
 		));

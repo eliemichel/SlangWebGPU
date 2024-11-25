@@ -1,7 +1,6 @@
 [[header]]
 #pragma once
 
-#include <slang-webgpu/common/result.h>
 #include <slang-webgpu/common/kernel-utils.h>
 
 // NB: raii::Foo is the equivalent of Foo except its release()/addRef() methods
@@ -64,12 +63,9 @@ public:
 	operator bool() const { return m_valid; }
 
 private:
-	Result<Void, Error> initialize();
-
-private:
 	static constexpr const char* s_name = "{{kernelLabel}}";
-	static constexpr const char* s_sourcePath = R"({{sourcePath}})";
 	static constexpr ThreadCount s_workgroupSize = {{workgroupSize}};
+	static const char* s_wgslSource;
 
 	wgpu::Device m_device;
 	bool m_valid = false;
@@ -83,8 +79,6 @@ private:
 [[implementation]]
 #include "{{kernelName}}Kernel.h"
 
-#include <slang-webgpu/common/logger.h>
-#include <slang-webgpu/common/io.h>
 #include <slang-webgpu/common/variant-utils.h>
 
 #include <variant>
@@ -96,33 +90,16 @@ namespace generated {
 {{kernelName}}Kernel::{{kernelName}}Kernel(Device device)
 	: m_device(device)
 {
-	auto maybeError = initialize();
-	if (isError(maybeError)) {
-		LOG(ERROR) << "Failed to initialize kernel '" << s_name << "': " + std::get<1>(maybeError).message;
-		m_valid = false;
-	}
-	else {
-		m_valid = true;
-	}
-}
-
-Result<Void, Error> {{kernelName}}Kernel::initialize() {
-	// 1. Load WGSL source code
-	std::string wgslSource;
-	TRY_ASSIGN(wgslSource, loadTextFile(s_sourcePath));
-
-	// 2. Create shader module
+	// 1. Create shader module
 	ShaderSourceWGSL wgslDesc = Default;
-	wgslDesc.code = StringView(wgslSource);
+	wgslDesc.code = StringView(s_wgslSource);
 	ShaderModuleDescriptor shaderDesc = Default;
 	shaderDesc.nextInChain = &wgslDesc.chain;
 	shaderDesc.label = StringView(s_name);
 	raii::ShaderModule shaderModule = m_device.createShaderModule(shaderDesc);
-	if (!shaderModule) {
-		return Error{ "Could not compile shader from '" + std::string(s_sourcePath) + "'" };
-	}
+	m_valid = shaderModule;
 
-	// 3. Create pipeline layout (automatically generated)
+	// 2. Create pipeline layout (automatically generated)
 	std::vector<BindGroupLayoutEntry> layoutEntries(3, Default);
 	{{bindGroupLayoutEntries}}
 
@@ -138,7 +115,7 @@ Result<Void, Error> {{kernelName}}Kernel::initialize() {
 	layoutDesc.bindGroupLayouts = (WGPUBindGroupLayout*)bindGroupLayouts.data();
 	raii::PipelineLayout layout = m_device.createPipelineLayout(layoutDesc);
 
-	// 4. Create compute pipeline
+	// 3. Create compute pipeline
 	ComputePipelineDescriptor pipelineDesc = Default;
 	pipelineDesc.label = StringView(s_name);
 	pipelineDesc.compute.module = *shaderModule;
@@ -148,7 +125,6 @@ Result<Void, Error> {{kernelName}}Kernel::initialize() {
 
 	m_pipeline = pipeline;
 	m_bindGroupLayouts = bindGroupLayouts;
-	return {};
 }
 
 BindGroup {{kernelName}}Kernel::createBindGroup(
@@ -207,5 +183,7 @@ void {{kernelName}}Kernel::dispatch(ComputePassEncoder computePass, DispatchSize
 	computePass.setBindGroup(0, bindGroup, 0, nullptr);
 	computePass.dispatchWorkgroups(workgroupCount.x, workgroupCount.y, workgroupCount.z);
 }
+
+const char* {{kernelName}}Kernel::s_wgslSource = R"({{wgslSource}})";
 
 } // namespace codegen

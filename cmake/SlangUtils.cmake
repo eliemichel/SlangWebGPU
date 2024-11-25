@@ -146,11 +146,6 @@ function(add_slang_webgpu_kernel TargetName)
 	set(GENERATOR $<TARGET_FILE:slang_webgpu_generator>)
 	set(TEMPLATE "${PROJECT_SOURCE_DIR}/src/generator/binding-template.tpl")
 
-	# The generated WGSL file
-	cmake_path(GET arg_SOURCE PARENT_PATH parent)
-	cmake_path(GET arg_SOURCE STEM LAST_ONLY stem)
-	set(WGSL_SHADER "${CMAKE_CURRENT_BINARY_DIR}/${parent}/${stem}.wgsl")
-
 	# The generated C++ source
 	set(KERNEL_HEADER "${CMAKE_CURRENT_BINARY_DIR}/generated/${arg_NAME}Kernel.h")
 	set(KERNEL_IMPLEM "${CMAKE_CURRENT_BINARY_DIR}/generated/${arg_NAME}Kernel.cpp")
@@ -172,7 +167,6 @@ entry point '${arg_ENTRY}'..."
 			--input-slang ${SLANG_SHADER}
 			--input-template ${TEMPLATE}
 			--entrypoints ${arg_ENTRY}
-			--output-wgsl ${WGSL_SHADER}
 			--output-hpp ${KERNEL_HEADER}
 			--output-cpp ${KERNEL_IMPLEM}
 			--include-directories ${SLANG_SHADER_DIR}
