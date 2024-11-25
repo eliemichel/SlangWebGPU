@@ -113,7 +113,7 @@ Result<Void, Error> run() {
 	});
 
 	while (!done) {
-		device->tick();
+		pollDeviceEvents(*device);
 	}
 
 	LOG(INFO) << "Result data:";

@@ -25,10 +25,10 @@ public:
 	~Logger() {
 		switch (m_level) {
 		case Level::ERROR:
-			std::cerr << "ERROR: " << m_stream.str() << std::endl;
+			std::cout << "ERROR: " << m_stream.str() << std::endl;
 			break;
 		case Level::WARNING:
-			std::cerr << "WARNING: " << m_stream.str() << std::endl;
+			std::cout << "WARNING: " << m_stream.str() << std::endl;
 			break;
 		case Level::INFO:
 			std::cout << "INFO: " << m_stream.str() << std::endl;

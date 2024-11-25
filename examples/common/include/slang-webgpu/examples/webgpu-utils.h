@@ -10,3 +10,10 @@
  * to get a device.
  */
 wgpu::Device createDevice();
+
+/**
+ * Let the device trigger pending callbacks if they are ready.
+ * NB: On emscripten, this requires ASYNCIFY. If you do not wish to use
+ * ASYNCIFY, use callbacks instead of explicitly polling the device
+ */
+void pollDeviceEvents(wgpu::Device device);

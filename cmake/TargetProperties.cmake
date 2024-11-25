@@ -72,4 +72,19 @@ function(set_example_target_properties TargetName)
 	# All examples use WebGPU
 	target_copy_webgpu_binaries(${TargetName})
 
+	if (EMSCRIPTEN)
+
+		# Generate a full web page rather than a simple WebAssembly module
+		set_target_properties(${TargetName} PROPERTIES SUFFIX ".html")
+
+		target_link_options(${TargetName}
+			PRIVATE
+			# ASYNCIFY is required by examples/common/webgpu-utils.h. It is
+			# easily possible to avoid it (and thus produce lighter builds),
+			# though it would add too much boilerplate for this example.
+			-sASYNCIFY
+		)
+
+	endif (EMSCRIPTEN)
+
 endfunction(set_example_target_properties)

@@ -125,11 +125,18 @@ HANDLE(RenderPipeline);
 HANDLE(Sampler);
 HANDLE(ShaderModule);
 HANDLE(Surface);
-HANDLE(SwapChain);
 HANDLE(Texture);
 HANDLE(TextureView);
 
 #undef HANDLE
 
 } // namespace raii
+
+// TODO: SwapChain?
+// TODO: Replace addRef with release
+// TODO: Move to distrib
+inline const char* StringView(const char* x) { return x; }
+inline const char* StringView(const std::string& x) { return x.c_str(); }
+#define ShaderSourceWGSL ShaderModuleWGSLDescriptor
+
 } // namespace wgpu

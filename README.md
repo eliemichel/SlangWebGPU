@@ -26,6 +26,10 @@ Building
 cmake -B build-generator -DSLANG_WEBGPU_BUILD_EXAMPLES=OFF
 emcmake cmake -B build-web -DSLANG_WEBGPU_BUILD_GENERATOR=OFF -DSlangWebGPU_Generator_DIR=/src/SlangWebGPU/build-generator
 cmake --build build-web
+python -m http.server 8000
+# Browse to:
+#  - http://localhost:8000/build-web/examples/basic_example/slang_webgpu_example.html
+#  - http://localhost:8000/build-web/examples/no_codegen/slang_webgpu_example_no_codegen.html
 ```
 
 Manually reproducing this repo
