@@ -20,6 +20,29 @@
 
 using namespace wgpu;
 
+// Mirror of what is in the Slang shader
+struct MyUniforms {
+	float offset;
+	float scale;
+	uint32_t _pad[2];
+};
+static_assert(sizeof(MyUniforms) % 16 == 0);
+struct ExtraUniforms {
+	uint32_t indexOffset;
+	uint32_t _pad[3];
+};
+static_assert(sizeof(ExtraUniforms) % 16 == 0);
+
+/**
+ * TODO: This struct and its substructs should ultimately be auto-generated as
+ * well, and available through BufferScalarMathKernel::Uniforms
+ */
+struct BufferScalarMathUniforms {
+	MyUniforms uniforms;
+	ExtraUniforms extraUniforms;
+};
+static_assert(sizeof(BufferScalarMathUniforms) % 16 == 0);
+
 /**
  * Main entry point
  */
@@ -53,14 +76,15 @@ Result<Void, Error> run() {
 	// 3. Create buffers
 	// Nothing specific to Slang here
 	BufferDescriptor bufferDesc = Default;
-	bufferDesc.size = 10 * sizeof(float);
-	bufferDesc.label = StringView("buffer0");
-	bufferDesc.usage = BufferUsage::Storage | BufferUsage::CopyDst;
-	raii::Buffer buffer0 = device->createBuffer(bufferDesc);
+	bufferDesc.size = sizeof(BufferScalarMathUniforms);
+	bufferDesc.label = StringView("uniforms");
+	bufferDesc.usage = BufferUsage::Uniform | BufferUsage::CopyDst;
+	raii::Buffer uniforms = device->createBuffer(bufferDesc);
 
-	bufferDesc.label = StringView("result");
-	bufferDesc.usage = BufferUsage::Storage | BufferUsage::CopySrc;
-	raii::Buffer result = device->createBuffer(bufferDesc);
+	bufferDesc.size = 10 * sizeof(float);
+	bufferDesc.label = StringView("buffer");
+	bufferDesc.usage = BufferUsage::Storage | BufferUsage::CopyDst | BufferUsage::CopySrc;
+	raii::Buffer buffer = device->createBuffer(bufferDesc);
 
 	bufferDesc.label = StringView("map");
 	bufferDesc.usage = BufferUsage::MapRead | BufferUsage::CopyDst;
@@ -68,34 +92,39 @@ Result<Void, Error> run() {
 
 	// 4. Fill in input buffers
 	// Nothing specific to Slang here
+	BufferScalarMathUniforms uniformData;
+	uniformData.uniforms.offset = 3.14f;
+	uniformData.uniforms.scale = 0.5f;
+	uniformData.extraUniforms.indexOffset = 0;
+	queue->writeBuffer(*uniforms, 0, &uniformData, sizeof(BufferScalarMathUniforms));
 	std::vector<float> data0(10);
-	std::vector<float> data1(10);
 	for (int i = 0; i < 10; ++i) {
-		data0[i] = i * 1.06f;
-		data1[i] = 2.36f - 0.87f * i;
+		data0[i] = 2.36f - 0.87f * i;
 	}
-	queue->writeBuffer(*buffer0, 0, data0.data(), bufferDesc.size);
+	queue->writeBuffer(*buffer, 0, data0.data(), bufferDesc.size);
 
 	// 5. Build bind group
 	// Each generated kernel provides a 'createBindGroup' whose argument number
 	// and names directly reflects the resources declared in the Slang shader.
-	raii::BindGroup bindGroup = kernel.createBindGroup(*buffer0, *result);
+	raii::BindGroup bindGroup = kernel.createBindGroup(*uniforms, *buffer);
 
-	// 6. Dispatch kernel and copy result to map buffer
-	// Each generated kernel provides a 'dispatch' method which can be called
-	// for a specific number of workgroups or threads (the number of workgroup
-	// is then automatically derived from the workgroup size).
-	// NB: The 'dispatch' method may receive an existing encoder or compute pass
-	// as first argument, otherwise if nothing is provided it creates its own
-	// encoder and submits it. Here we create an encoder so that we directly issue
-	// the buffer copy in the same command buffer.
+	// 6. Dispatch kernel multiple times with various uniforms
+	uniformData.uniforms.offset = 3.14f;
+	queue->writeBuffer(*uniforms, 0, &uniformData, sizeof(BufferScalarMathUniforms));
+	kernel.dispatchAdd(ThreadCount{ 10 }, *bindGroup);
+
+	uniformData.uniforms.scale = 0.5f;
+	uniformData.uniforms.offset = 0.04f;
+	queue->writeBuffer(*uniforms, 0, &uniformData, sizeof(BufferScalarMathUniforms));
+	kernel.dispatchMultiplyAndAdd(ThreadCount{ 10 }, *bindGroup);
+
+	// 7. Copy result to map buffer
 	raii::CommandEncoder encoder = device->createCommandEncoder();
-	kernel.dispatchAdd(*encoder, ThreadCount{ 10 }, *bindGroup);
-	encoder->copyBufferToBuffer(*result, 0, *mapBuffer, 0, result->getSize());
+	encoder->copyBufferToBuffer(*buffer, 0, *mapBuffer, 0, buffer->getSize());
 	raii::CommandBuffer commands = encoder->finish();
 	queue->submit(*commands);
 
-	// 7. Read back result
+	// 8. Read back result
 	// Nothing specific to Slang here
 	bool done = false;
 	std::vector<float> resultData(10);
@@ -111,10 +140,12 @@ Result<Void, Error> run() {
 		pollDeviceEvents(*device);
 	}
 
+	// 9. Check result
+	// Nothing specific to Slang here
 	LOG(INFO) << "Result data:";
 	for (int i = 0; i < 10; ++i) {
-		LOG(INFO) << data0[i] << " + " << 3.14f << " = " << resultData[i];
-		TRY_ASSERT(isClose(data0[i] + 3.14f, resultData[i]), "Shader did not run correctly!");
+		LOG(INFO) << "(" << data0[i] << " + 3.14) * 0.5 + 0.04 = " << resultData[i];
+		TRY_ASSERT(isClose((data0[i] + 3.14f) * 0.5f + 0.04f, resultData[i]), "Shader did not run correctly!");
 	}
 
 	return {};

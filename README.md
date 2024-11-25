@@ -73,12 +73,14 @@ struct Kernel {
 
 9. Generalize to cases where we want to expose **multiple entry points** from the same shader, hence implementing multiple `dispatch` methods.
 
-10. Progressively complexify the generator to handle slang shader file inclusion (through a Depfile).
-TODO: autodiff.
-TODO: custom entry point name
-TODO: uniforms
+10. Progressively complexify the generator to handle slang shader file inclusion (through a Depfile), to support global uniform buffers, etc.
+
+TODO: try more complex scenarios (with autodiff).
 TODO: texture
 TODO: backport emscripten changes to webgpu distrib
+TODO: local uniform parameters
+TODO: Generate the Uniform struct
+TODO: CI
 
 Internal notes
 --------------
@@ -87,5 +89,3 @@ Internal notes
 # Memo to look for TODOs:
 grep -R TODO --exclude-dir=build* --exclude-dir=third_party
 ```
-
-TODO: why does the generator crash?

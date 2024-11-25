@@ -15,6 +15,8 @@
 #include <variant>
 #include <string_view>
 #include <optional>
+#include <algorithm>
+#include <deque>
 
 using namespace slang;
 using magic_enum::enum_name;
@@ -354,7 +356,21 @@ public:
 		std::string type;
 		std::optional<size_t> minBindingSize;
 	};
-	using BindingInfo = std::variant<BufferBindingInfo>;
+	using BindingDetails = std::variant<BufferBindingInfo>;
+	struct BindingInfo {
+		uint32_t index;
+		std::string name;
+		BindingDetails details;
+	};
+
+	struct UniformInfo {
+		size_t minBindingSize = 0;
+	};
+
+	struct LayoutInfo {
+		std::optional<UniformInfo> uniforms;
+		std::deque<BindingInfo> bindings;
+	};
 
 public:
 	BindingGenerator(
@@ -365,7 +381,13 @@ public:
 		: m_name(name)
 		, m_layout(layout)
 		, m_wgslSource(wgslSource)
-	{}
+	{
+		m_initError = buildLayoutInfo();
+	}
+
+	Result<Void, Error> check() const {
+		return m_initError;
+	}
 
 	Result<Void, Error> processExpression(const std::string& expr, std::ostringstream& out) {
 		if (expr == "kernelName") {
@@ -401,37 +423,37 @@ public:
 		}
 		else if (expr == "bindGroupEntryCount") {
 			size_t count = 0;
-			TRY(visitBindings([&count](unsigned, VariableLayoutReflection*, const BindingInfo&) {
+			TRY(visitBindings([&count](unsigned, const BindingInfo&) {
 				count += 1;
 			}));
 			out << count;
 		}
 		else if (expr == "bindGroupMembers") {
-			TRY(visitBindings([&](unsigned i, VariableLayoutReflection* parameter, const BindingInfo& info) {
+			TRY(visitBindings([&](unsigned i, const BindingInfo& binding) {
 				if (i > 0) out << ",\n\t\t";
 				std::visit(overloaded{
 					[&](const BufferBindingInfo&) {
-						out << "wgpu::Buffer " << parameter->getName();
+						out << "wgpu::Buffer " << binding.name;
 					}
-				}, info);
+				}, binding.details);
 			}));
 		}
 		else if (expr == "bindGroupMembersImpl") {
-			TRY(visitBindings([&](unsigned i, VariableLayoutReflection* parameter, const BindingInfo& info) {
+			TRY(visitBindings([&](unsigned i, const BindingInfo& binding) {
 				if (i > 0) out << ",\n\t";
 				std::visit(overloaded{
 					[&](const BufferBindingInfo&) {
-						out << "Buffer " << parameter->getName();
+						out << "Buffer " << binding.name;
 					}
-				}, info);
+				}, binding.details);
 			}));
 		}
 		else if (expr == "bindGroupLayoutEntries") {
 			static constexpr const char* nl = "\n\t";
-			TRY(visitBindings([&](unsigned i, VariableLayoutReflection* parameter, const BindingInfo& info) {
+			TRY(visitBindings([&](unsigned i, const BindingInfo& binding) {
 				if (i > 0) out << nl << nl;
-				out << "// Member '" << parameter->getName() << "'" << nl;
-				out << "layoutEntries[" << i << "].binding = " << parameter->getBindingIndex() << ";" << nl;
+				out << "// Member '" << binding.name << "'" << nl;
+				out << "layoutEntries[" << i << "].binding = " << binding.index << ";" << nl;
 				out << "layoutEntries[" << i << "].visibility = ShaderStage::Compute;" << nl;
 				std::visit(overloaded{
 					[&](const BufferBindingInfo& bufferBinding) {
@@ -440,21 +462,27 @@ public:
 						}
 						out << "layoutEntries[" << i << "].buffer.type = BufferBindingType::" << bufferBinding.type << ";";
 					}
-				}, info);
+				}, binding.details);
 			}));
 		}
 		else if (expr == "bindGroupEntries") {
 			static constexpr const char* nl = "\n\t";
-			TRY(visitBindings([&](unsigned i, VariableLayoutReflection* parameter, const BindingInfo& info) {
+			TRY(visitBindings([&](unsigned i, const BindingInfo& binding) {
 				if (i > 0) out << nl << nl;
-				out << "entries[" << i << "].binding = " << parameter->getBindingIndex() << ";" << nl;
+				out << "entries[" << i << "].binding = " << binding.index << ";" << nl;
 				std::visit(overloaded{
 					[&](const BufferBindingInfo&) {
-						out << "entries[" << i << "].buffer = " << parameter->getName() << ";" << nl;
-						out << "entries[" << i << "].size = " << parameter->getName() << ".getSize();";
+						out << "entries[" << i << "].buffer = " << binding.name << ";" << nl;
+						out << "entries[" << i << "].size = " << binding.name << ".getSize();";
 					}
-				}, info);
+				}, binding.details);
 			}));
+		}
+		else if (expr == "uniformStructDefinition") {
+			static constexpr const char* nl = "\n\t";
+			out << "struct Uniforms {" << nl;
+			out << "\t// TODO" << nl;
+			out << "};";
 		}
 		else {
 			return Error{ "Invalid template expression: " + expr };
@@ -474,6 +502,9 @@ public:
 			// rely on the current entry point index.
 			m_currentEntryPoint = 0;
 		}
+		else if (iterator_name == "hasUniforms") {
+			// Nothing to step, this is in effect a "if".
+		}
 		else {
 			return Error{ "Invalid iterator name: " + iterator_name };
 		}
@@ -485,6 +516,9 @@ public:
 			m_currentEntryPoint += 1;
 		}
 		else if (iterator_name == "entryPointCount == 1") {
+			// Nothing to step, this is in effect a "if".
+		}
+		else if (iterator_name == "hasUniforms") {
 			// Nothing to step, this is in effect a "if".
 		}
 		else {
@@ -502,19 +536,16 @@ public:
 			size_t entryPointCount = size_t(m_layout->getEntryPointCount());
 			return entryPointCount != 1; // 'iteratorEnded' is the inverse of the if condition
 		}
+		else if (iterator_name == "hasUniforms") {
+			return !m_layoutInfo.uniforms.has_value(); // 'iteratorEnded' is the inverse of the if condition
+		}
 		else {
 			return Error{ "Invalid iterator name: " + iterator_name };
 		}
 	}
 
 private:
-	/**
-	 * An internal utility function that visits all the bindings and provides to
-	 * the visitor the reflection information that we actually need.
-	 */
-	Result<Void, Error> visitBindings(
-		const std::function<void(unsigned i, VariableLayoutReflection* parameter, const BindingInfo& info)>& visitor
-	) {
+	Result<Void, Error> buildLayoutInfo() {
 		unsigned parameterCount = m_layout->getParameterCount();
 		for (unsigned i = 0; i < parameterCount; ++i) {
 			VariableLayoutReflection* parameter = m_layout->getParameterByIndex(i);
@@ -527,10 +558,9 @@ private:
 				"Use of more than one bind group is not supported."
 			);
 
-			bool isUniform = false;
 			switch (category) {
+
 			case ParameterCategory::DescriptorTableSlot: {
-				isUniform = false;
 				TRY_ASSERT(
 					kind == TypeReflection::Kind::Resource,
 					"Only resource bindings are supported, but found kind '" << enum_name(kind) << "'"
@@ -545,26 +575,12 @@ private:
 					shape == SLANG_STRUCTURED_BUFFER,
 					"Only structured buffers are supported, but found resource shape '" << enum_name(shape) << "'"
 				);
-				break;
-			}
-			case ParameterCategory::Uniform:
-				isUniform = true;
-				TRY_ASSERT(
-					kind == TypeReflection::Kind::Struct,
-					"Only Struct uniforms are supported, but found kind '" << enum_name(kind) << "'"
-				);
-				break;
-			default:
-				return Error{ "Parameter category '" + std::string(enum_name(category)) + "' is not supported" };
-			}
 
-			SlangResourceAccess access = typeLayout->getResourceAccess();
-			BufferBindingInfo bufferBinding;
-			if (isUniform) {
-				bufferBinding.type = "Uniform";
-				bufferBinding.minBindingSize = typeLayout->getSize((SlangParameterCategory)category);
-			}
-			else {
+				BindingInfo binding;
+				binding.index = parameter->getBindingIndex();
+				binding.name = parameter->getName();
+				BufferBindingInfo bufferBinding;
+				SlangResourceAccess access = typeLayout->getResourceAccess();
 				switch (access) {
 				case SLANG_RESOURCE_ACCESS_READ:
 					bufferBinding.type = "ReadOnlyStorage";
@@ -575,9 +591,61 @@ private:
 				default:
 					return Error{ "SlangResourceAccess '" + std::string(enum_name(access)) + "' is not supported." };
 				}
+				binding.details = bufferBinding;
+				m_layoutInfo.bindings.push_back(binding);
+				break;
 			}
 
-			visitor(i, parameter, bufferBinding);
+			case ParameterCategory::Uniform: {
+				TRY_ASSERT(
+					kind == TypeReflection::Kind::Struct || kind == TypeReflection::Kind::Scalar,
+					"Only Struct and Scalar uniforms are supported, but found kind '" << enum_name(kind) << "'"
+				);
+
+				size_t byteOffset = parameter->getBindingIndex();
+				size_t byteSize = typeLayout->getSize((SlangParameterCategory)category);
+
+				if (!m_layoutInfo.uniforms.has_value()) {
+					m_layoutInfo.uniforms = UniformInfo{};
+				}
+				auto& minBindingSize = m_layoutInfo.uniforms->minBindingSize;
+				minBindingSize = std::max(minBindingSize, byteOffset + byteSize);
+
+				break;
+			}
+
+			default:
+				return Error{ "Parameter category '" + std::string(enum_name(category)) + "' is not supported" };
+			}
+		}
+
+		// If there are global parameters, add them as a first binding:
+		if (m_layoutInfo.uniforms.has_value()) {
+			BindingInfo binding;
+			binding.index = 0;
+			binding.name = "uniforms";
+			BufferBindingInfo uniformBufferBinding;
+			uniformBufferBinding.minBindingSize = m_layoutInfo.uniforms->minBindingSize;
+			uniformBufferBinding.type = "Uniform";
+			binding.details = uniformBufferBinding;
+			m_layoutInfo.bindings.push_front(binding);
+		}
+
+		return {};
+	}
+
+	/**
+	 * An internal utility function that visits all the bindings and provides to
+	 * the visitor the reflection information that we actually need.
+	 */
+	Result<Void, Error> visitBindings(
+		const std::function<void(unsigned i, const BindingInfo& info)>& visitor
+	) {
+		TRY(check());
+		unsigned i = 0;
+		for (const auto& binding : m_layoutInfo.bindings) {
+			visitor(i, binding);
+			++i;
 		}
 		return {};
 	}
@@ -586,6 +654,10 @@ private:
 	const std::string m_name;
 	slang::ProgramLayout* m_layout;
 	const std::string m_wgslSource;
+
+	// Information extracted from m_layout in a form better suited for our generator
+	LayoutInfo m_layoutInfo;
+	Result<Void, Error> m_initError;
 
 	// Iterators
 	size_t m_currentEntryPoint;
@@ -608,6 +680,7 @@ Result<Void, Error> generateCppBinding(
 	TRY_ASSIGN(tpl, loadTextFile(inputTemplate));
 
 	BindingGenerator generator(name, layout, wgslSource);
+	TRY(generator.check());
 
 	LOG(INFO) << "Generating binding header into " << outputHpp << "...";
 	std::string hpp;

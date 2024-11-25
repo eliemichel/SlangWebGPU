@@ -15,6 +15,13 @@ namespace generated {
  * A basic class that contains everything needed to dispatch a compute job.
  */
 class {{kernelName}}Kernel {
+	{{if hasUniforms}}
+public:
+	/**
+	 * Use this struct to build the 'uniforms' buffer expected by createBindGroup().
+	 */
+	{{uniformStructDefinition}}
+	{{end}}
 public:
 	{{kernelName}}Kernel(wgpu::Device device);
 
@@ -216,7 +223,7 @@ BindGroup {{kernelName}}Kernel::createBindGroup(
 	{{bindGroupEntries}}
 
 	BindGroupDescriptor bindGroupDesc = Default;
-	bindGroupDesc.label = StringView("Bind group");
+	bindGroupDesc.label = StringView(s_name);
 	bindGroupDesc.layout = *m_bindGroupLayouts[0];
 	bindGroupDesc.entryCount = entries.size();
 	bindGroupDesc.entries = entries.data();
