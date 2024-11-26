@@ -51,4 +51,4 @@ jobs:
 
     - name: Test
       working-directory: build
-      run: echo TODO
+      run: python test/test_examples.py
