@@ -50,5 +50,4 @@ jobs:
         --config ${{ matrix.build_type }}
 
     - name: Test
-      working-directory: build
-      run: python test/test_examples.py
+      run: python tests/test_examples.py
