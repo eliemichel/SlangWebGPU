@@ -10,7 +10,7 @@ struct ExtraUniforms {
 uniform ExtraUniforms extraUniforms;
 
 [shader("compute")]
-[numthreads(8,1,1)]
+[numthreads(8, 1, 1)]
 void add(uint3 threadId : SV_DispatchThreadID)
 {
     uint index = threadId.x;

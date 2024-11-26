@@ -36,6 +36,13 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    # We need something to run Vulkan on CPU when on the linux runner
+    - name: Install SwiftShader
+      if: ${{ matrix.runner == 'ubuntu-latest' }}
+      uses: NcStudios/VulkanCI@v1.1
+      with:
+        sdkVersion: 1.3.261.1
+
     - name: Configure CMake
       run: >
         cmake

@@ -81,7 +81,7 @@ Result<Void, Error> run() {
 	bufferDesc.usage = BufferUsage::Uniform | BufferUsage::CopyDst;
 	raii::Buffer uniforms = device->createBuffer(bufferDesc);
 
-	bufferDesc.size = 10 * sizeof(float);
+	bufferDesc.size = 16 * sizeof(float);
 	bufferDesc.label = StringView("buffer");
 	bufferDesc.usage = BufferUsage::Storage | BufferUsage::CopyDst | BufferUsage::CopySrc;
 	raii::Buffer buffer = device->createBuffer(bufferDesc);
@@ -97,8 +97,8 @@ Result<Void, Error> run() {
 	uniformData.uniforms.scale = 0.5f;
 	uniformData.extraUniforms.indexOffset = 0;
 	queue->writeBuffer(*uniforms, 0, &uniformData, sizeof(BufferScalarMathUniforms));
-	std::vector<float> data0(10);
-	for (int i = 0; i < 10; ++i) {
+	std::vector<float> data0(16);
+	for (int i = 0; i < 16; ++i) {
 		data0[i] = 2.36f - 0.87f * i;
 	}
 	queue->writeBuffer(*buffer, 0, data0.data(), bufferDesc.size);
@@ -111,12 +111,12 @@ Result<Void, Error> run() {
 	// 6. Dispatch kernel multiple times with various uniforms
 	uniformData.uniforms.offset = 3.14f;
 	queue->writeBuffer(*uniforms, 0, &uniformData, sizeof(BufferScalarMathUniforms));
-	kernel.dispatchAdd(ThreadCount{ 10 }, *bindGroup);
+	kernel.dispatchAdd(ThreadCount{ 16 }, *bindGroup);
 
 	uniformData.uniforms.scale = 0.5f;
 	uniformData.uniforms.offset = 0.04f;
 	queue->writeBuffer(*uniforms, 0, &uniformData, sizeof(BufferScalarMathUniforms));
-	kernel.dispatchMultiplyAndAdd(ThreadCount{ 10 }, *bindGroup);
+	kernel.dispatchMultiplyAndAdd(ThreadCount{ 16 }, *bindGroup);
 
 	// 7. Copy result to map buffer
 	raii::CommandEncoder encoder = device->createCommandEncoder();
@@ -127,7 +127,7 @@ Result<Void, Error> run() {
 	// 8. Read back result
 	// Nothing specific to Slang here
 	bool done = false;
-	std::vector<float> resultData(10);
+	std::vector<float> resultData(16);
 	auto h = mapBuffer->mapAsync(MapMode::Read, 0, mapBuffer->getSize(), [&](BufferMapAsyncStatus status) {
 		done = true;
 		if (status == BufferMapAsyncStatus::Success) {
@@ -143,7 +143,7 @@ Result<Void, Error> run() {
 	// 9. Check result
 	// Nothing specific to Slang here
 	LOG(INFO) << "Result data:";
-	for (int i = 0; i < 10; ++i) {
+	for (int i = 0; i < 16; ++i) {
 		LOG(INFO) << "(" << data0[i] << " + 3.14) * 0.5 + 0.04 = " << resultData[i];
 		TRY_ASSERT(isClose((data0[i] + 3.14f) * 0.5f + 0.04f, resultData[i]), "Shader did not run correctly!");
 	}
