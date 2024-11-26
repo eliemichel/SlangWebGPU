@@ -67,6 +67,10 @@ def runExample(example, exe_path):
 		if line.startswith("ERROR:"):
 			print(f"Example '{example}' failed at output line {i}:")
 			print(line)
+			print()
+			print("Full log:")
+			print(proc.stdout.decode())
+			print(proc.stderr.decode())
 			exit(1)
 	print(f"Example '{example}' passed test.")
 
