@@ -30,7 +30,7 @@ This is a demo of a possible use of [Slang](https://shader-slang.com/) shader co
 - Slang reflection API is used to **auto-generate boilerplate** binding code on the C++ side.
 - Example of **auto-differentiation** features of Slang are given.
 - Build instruction for **native** and **Web** targets.
-- Provides a `add_slang_shader` and `target_link_slang_shader` to help managing Slang shader targets (in `cmake/SlangUtils.cmake`).
+- Provides a `add_slang_shader` and `add_slang_webgpu_kernel` to help managing Slang shader targets (in `cmake/SlangUtils.cmake`).
 
 Outline
 -------
@@ -55,7 +55,7 @@ Notes
 
 > 🤔 Ergl, **I don't want codegen**, but I'm interested in the Slang to WGSL part...
 
-Sure, have a look at [`examples/00_no_codegen`](examples/00_no_codegen). All it needs is `cmake/FetchSlang.cmake` and `cmake/SlangUtils.cmake`, but you can strip down the whole codegen part if you don't like it.
+Sure, have a look at [`examples/00_no_codegen`](examples/00_no_codegen). All it needs is `cmake/FetchSlang.cmake` and the `add_slang_shader` function from `cmake/SlangUtils.cmake`, so you can strip down the whole codegen part if you don't like it.
 
 What is this?
 -------------
@@ -110,9 +110,12 @@ add_slang_webgpu_kernel(
 )
 ```
 
-The target `generate_hello_world_kernel` is a static library target that builds `HelloWorldKernel`.
+The target `generate_hello_world_kernel` is a static library target that generates and builds `HelloWorldKernel`, given the Slang shader set as source.
 
-Lastly, this repository provides a basic setup to fetch precompiled Slang library in a CMake project (see `cmake/FetchSlang.cmake`) that is compatible with cross-compilation.
+> [!NOTE]
+> The `add_slang_webgpu_kernel` function can handle multiple entrypoints. For instance specifying `ENTRY foo bar` will generate a kernel that has a `dispatchFoo()` and a `dispatchBar()` method. For convenice, a simple `dispatch()` alias is defined when there is only one entrypoint.
+
+Lastly, this repository provides a basic setup to **fetch precompiled Slang library** in a CMake project (see `cmake/FetchSlang.cmake`) that is compatible with cross-compilation (i.e. `slangc` executable is fetched for the host system while `slang` libraries are fetched -- if needed -- for the target system).
 
 Building
 --------
